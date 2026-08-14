@@ -1,0 +1,25 @@
+[
+  {
+    "_id": "w1",
+    "question": "Where does the person who leads the platform team sit?",
+    "answer": "Room 204",
+    "type": "bridge",
+    "context": [
+      ["Jan Kowalski", ["Jan Kowalski leads the platform team.", "He joined Meridian Labs in 2015."]],
+      ["Room 204", ["Room 204 is a corner office where Jan Kowalski sits."]],
+      ["Krakow", ["Krakow is a city in southern Poland."]]
+    ],
+    "supporting_facts": [["Jan Kowalski", 0], ["Room 204", 0]]
+  },
+  {
+    "_id": "w2",
+    "question": "Are Meridian Labs and the Atlas Project both based in Krakow?",
+    "answer": "yes",
+    "type": "comparison",
+    "context": [
+      ["Meridian Labs", ["Meridian Labs is headquartered in Krakow."]],
+      ["Atlas Project", ["The Atlas Project is run from Krakow by Meridian Labs."]]
+    ],
+    "supporting_facts": [["Meridian Labs", 0], ["Atlas Project", 0]]
+  }
+]

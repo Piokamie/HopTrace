@@ -1,0 +1,112 @@
+"""End-to-end proof over the shipped demo corpus: the designed questions
+from examples/QUESTIONS.md are answered at hops=2 via their documented
+bridges and missed by the floor (hops=0)."""
+
+from pathlib import Path
+
+import pytest
+
+from hoptrace.bracket import run_bracket
+from hoptrace.config import RetrievalConfig, corpus_path
+from hoptrace.ingest import ingest_path
+from hoptrace.retrieve import Retriever
+from hoptrace.store import Store
+
+OFFICE = Path(__file__).parent.parent / "examples" / "office"
+
+# (question, answer doc, bridge entity) — rows 1-4 and 6 of QUESTIONS.md;
+# row 5 is the documented weakly-lexical case, tested separately.
+DESIGNED = [
+    (
+        "Where does the manager of Alicja Rud sit?",
+        "people/marek-sosna.md",
+        "marek sosna",
+    ),
+    (
+        "What equipment is in the room where the calibration team meets?",
+        "facilities/hala-d.md",
+        "hala d",
+    ),
+    (
+        "Which initiative involves the person who maintains the procurement ledger?",
+        "projects/vega.md",
+        "tomasz gil",
+    ),
+    (
+        "Who approves invoices sent by the vendor servicing the elevators?",
+        "people/beata-lis.md",
+        "koleo serwis",
+    ),
+    (
+        "What colour of pass is needed for the floor where the vault is?",
+        "security/badges.md",
+        "level 3",
+    ),
+]
+
+
+@pytest.fixture(scope="module")
+def store(tmp_path_factory: pytest.TempPathFactory) -> Store:
+    import os
+
+    os.environ["HOPTRACE_DATA_DIR"] = str(tmp_path_factory.mktemp("data"))
+    store, report = ingest_path(OFFICE, "office", analyzer="english")
+    assert report.documents == 25  # QUESTIONS.md lives OUTSIDE the corpus dir
+    assert corpus_path("office").is_file()
+    return store
+
+
+@pytest.fixture(scope="module")
+def retriever(store: Store) -> Retriever:
+    return Retriever(store, RetrievalConfig(hops=2, k=8))
+
+
+def answer_chunks(store: Store, doc: str) -> set[int]:
+    return set(store.chunks_by_doc_path([doc]).get(doc, []))
+
+
+@pytest.mark.parametrize(("question", "answer_doc", "bridge"), DESIGNED)
+def test_designed_questions_answered_at_two_hops(
+    store: Store, retriever: Retriever, question: str, answer_doc: str, bridge: str
+) -> None:
+    gold = answer_chunks(store, answer_doc)
+    assert gold, f"missing answer doc {answer_doc}"
+
+    result = retriever.retrieve(question, hops=2)
+    found = [e for e in result.evidence if e.chunk_id in gold]
+    assert found, f"{question!r} did not surface {answer_doc} at hops=2"
+    evidence = found[0]
+    assert evidence.path.hop >= 1
+    path_entities = [edge.entity for edge in evidence.path.edges]
+    assert bridge in path_entities, f"path {path_entities} does not cite bridge {bridge!r}"
+
+
+@pytest.mark.parametrize(("question", "answer_doc", "bridge"), DESIGNED)
+def test_designed_questions_missed_by_floor(
+    store: Store, retriever: Retriever, question: str, answer_doc: str, bridge: str
+) -> None:
+    gold = answer_chunks(store, answer_doc)
+    result = retriever.retrieve(question, hops=0)
+    assert all(e.chunk_id not in gold for e in result.evidence), (
+        f"{question!r} reached {answer_doc} lexically — the question is not"
+        " single-hop-proof; fix the corpus or the question"
+    )
+
+
+def test_weakly_lexical_case_documented(store: Store, retriever: Retriever) -> None:
+    """Question 5 shares one stem ('constructed') with its answer doc: the
+    floor may rank it, but only the hop result explains it via the bridge."""
+    question = "When was the building that hosts the archive constructed?"
+    gold = answer_chunks(store, "facilities/budynek-c.md")
+    result = retriever.retrieve(question, hops=2)
+    found = [e for e in result.evidence if e.chunk_id in gold]
+    assert found
+    if found[0].path.hop >= 1:
+        assert "budynek c" in [edge.entity for edge in found[0].path.edges]
+
+
+def test_bracket_runs_clean(store: Store) -> None:
+    report = run_bracket(store, RetrievalConfig(k=8), n_questions=20, seed=0)
+    assert report.n_questions > 0
+    assert report.rows[2].all_gold >= report.rows[0].all_gold
+    assert "never as cross-system evidence" in report.caveat
