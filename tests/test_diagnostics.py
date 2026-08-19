@@ -86,8 +86,7 @@ def test_annotated_fraction_and_gap() -> None:
 
 
 def test_no_answer_stratum() -> None:
-    """Answer-less questions must never silently count as effective
-    multi-hop — that would saturate the calibration metric."""
+    """Answer-less questions do not count as effective multi-hop (it would saturate the metric)."""
     outcomes = [
         outcome("q1", "", frozenset({1}), (9,), ("nothing",)),  # no answer
         outcome("q2", "Paris", frozenset({1}), (1,), ("In Paris.",)),  # single

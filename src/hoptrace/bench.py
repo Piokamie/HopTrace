@@ -1,24 +1,10 @@
-"""Self-benchmark generation: synthetic questions from a corpus's own
-entity tables. Deterministic given a seed; no LLM, no wall clock.
+"""Self-benchmark generation: synthetic keyword questions from a corpus's
+own entity tables. Deterministic given a seed; no LLM.
 
-Two question kinds:
-
-- **Single-hop**: pick a chunk with >= 2 entities; the query is one
-  entity's surface form plus content words from the same chunk. Gold =
-  that chunk.
-- **Multi-hop**: find a bridge entity shared by exactly two chunks (and
-  nothing else shared between them); the query is built ENTIRELY from c1
-  material — a c1-only entity surface plus c1 content words that do not
-  occur in c2 — so c2 shares zero query lexemes by construction and is
-  reachable only over the bridge. Gold = {c1, c2}.
-
-Queries are keyword queries, not natural language — the benchmark
-exercises retrieval plumbing, not language understanding.
-
-The structural caveat (ADR 0004) is embedded in every bracket report:
-questions are generated from bridges the extractor already found, so
-extraction misses are invisible and floor-vs-HopTrace comparisons favor HopTrace.
-Diagnostic, never evidence.
+Single-hop: one entity surface plus content words from the same chunk;
+gold = that chunk. Multi-hop: a bridge entity shared by exactly two chunks;
+the query is a c1-only entity surface plus c1 content words absent from
+c2, so c2 is reachable only over the bridge; gold = {c1, c2}.
 """
 
 from __future__ import annotations
@@ -126,9 +112,6 @@ def _multi_hop(store: Store, rng: random.Random, n: int) -> list[BenchQuestion]:
     questions: list[BenchQuestion] = []
     if store.n_chunks == 0 or n <= 0:
         return []
-    # The single-hop-proof check must run in the corpus's ANALYZED term
-    # space: raw-token disjointness would still leave stem overlaps
-    # ("sprawling" vs "sprawls") for the floor to exploit.
     analyzer = store.meta("analyzer") or "simple"
     bridges = store.entities_in_df_range(2, _BRIDGE_DF_MAX, _BRIDGE_CANDIDATES)
     rng.shuffle(bridges)
@@ -152,7 +135,6 @@ def _multi_hop(store: Store, rng: random.Random, n: int) -> list[BenchQuestion]:
             continue
         c1 = store.get_chunk(c1_id)
         c2 = store.get_chunk(c2_id)
-        # words strictly from c1, absent from c2: c2 shares no query lexeme
         words = _content_words(
             c1.text,
             _entity_tokens(store, c1_id),
@@ -163,7 +145,7 @@ def _multi_hop(store: Store, rng: random.Random, n: int) -> list[BenchQuestion]:
             continue
         text = f"{surface} {' '.join(words)}"
         if set(analyze(text, analyzer)) & set(analyze(c2.text, analyzer)):
-            continue  # enforce the single-hop-proof property in analyzed terms
+            continue  # analyzed terms, not raw tokens: "sprawling"/"sprawls" would still overlap
         questions.append(
             BenchQuestion(
                 qid=f"multi-{len(questions)}",

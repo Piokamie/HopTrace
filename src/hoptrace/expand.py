@@ -1,10 +1,9 @@
-"""Bounded hop expansion with recorded paths — the core of HopTrace.
+"""Bounded hop expansion with recorded paths.
 
 A hop is a join: chunk → co-occurring entities → chunks mentioning them.
 Entity specificity filters at expansion time (IDF ranking + hub cutoff),
-because hub entities connect everything to everything and would fill the
-beam with junk before any scorer could help. Everything is deterministic:
-all ties break on (strength desc, id asc) / (idf desc, entity asc).
+since hub entities would fill the beam before any scorer could help.
+Ties break on (strength desc, id asc) / (idf desc, entity asc).
 """
 
 from __future__ import annotations
@@ -21,22 +20,20 @@ from hoptrace.store import Store
 class Candidate:
     chunk_id: int
     path: HopPath
-    #: Seeds: query relevance in [0, 1]. Hop-reached: propagated
-    #: parent_score × bridge_strength — never query similarity (ADR 0005).
+    #: seeds: query relevance in [0, 1]; hops: parent_score × bridge_strength,
+    #: not query similarity (ADR 0005)
     score: float
     hop: int
 
 
 def bridge_strength(edge: HopEdge) -> float:
-    """Strength of one traversed edge, in [0, 1): bridge-entity
-    specificity (IDF-normalized; link uniqueness falls out of df) times a
-    saturating mention count."""
+    """Strength of one traversed edge, in [0, 1): IDF-normalized entity
+    specificity times a saturating mention count."""
     return edge.entity_specificity * edge.mention_count / (edge.mention_count + 1.0)
 
 
 class Expander:
-    """Reusable across queries on one corpus: the df and posting-list
-    caches are corpus-level facts and repeat heavily between queries."""
+    """Reusable across queries on one corpus; df and posting-list caches are corpus-level."""
 
     def __init__(self, store: Store, cfg: RetrievalConfig) -> None:
         self._store = store
@@ -51,18 +48,15 @@ class Expander:
     ) -> tuple[dict[int, Candidate], int]:
         """Expand seeds by up to ``hops`` (default cfg.hops).
 
-        Returns (pool, touched): the pool keeps one candidate per chunk —
-        the earliest ring that reached it wins (pool members are never
-        revisited by later rings; within a ring, the strongest path wins) —
-        and ``touched`` counts distinct chunks reached during expansion,
-        for budget accounting."""
+        Returns (pool, touched): one candidate per chunk — the earliest ring
+        that reached it wins, the strongest path within a ring — and the count
+        of distinct chunks reached by expansion."""
         max_hops = self._cfg.hops if hops is None else hops
         pool: dict[int, Candidate] = {}
         for seed in seeds:
             self._admit(pool, seed)
         frontier = sorted(pool.values(), key=lambda c: (-c.score, c.chunk_id))
-        # distinct chunks reached by expansion only — seeds are already
-        # counted in the caller's BM25 candidate tally
+        # seeds are already counted in the caller's BM25 tally
         reached_ever: set[int] = set()
 
         for hop in range(1, max_hops + 1):
@@ -105,9 +99,8 @@ class Expander:
             pool[candidate.chunk_id] = candidate
 
     def _entities_to_follow(self, candidate: Candidate) -> list[tuple[str, float]]:
-        """Co-occurring entities of the candidate's chunk, specificity-
-        filtered and IDF-ranked; entities already used on this path are
-        never re-followed."""
+        """Co-occurring entities of the candidate's chunk, specificity-filtered
+        and IDF-ranked; entities already on this path are skipped."""
         used = {edge.entity for edge in candidate.path.edges}
         entities = [e for e in self._store.entities_for_chunk(candidate.chunk_id) if e not in used]
         dfs = self._dfs(entities)

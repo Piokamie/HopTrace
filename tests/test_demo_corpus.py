@@ -2,6 +2,7 @@
 from examples/QUESTIONS.md are answered at hops=2 via their documented
 bridges and missed by the floor (hops=0)."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from hoptrace.store import Store
 
 OFFICE = Path(__file__).parent.parent / "examples" / "office"
 
-# (question, answer doc, bridge entity) — rows 1-4 and 6 of QUESTIONS.md;
+# (question, answer doc, bridge entity) — rows 1-4, 6 and 7 of QUESTIONS.md;
 # row 5 is the documented weakly-lexical case, tested separately.
 DESIGNED = [
     (
@@ -42,18 +43,23 @@ DESIGNED = [
         "security/badges.md",
         "level 3",
     ),
+    (
+        "What can the manager of Alicja Rud see from the window?",
+        "facilities/office-b12.md",
+        "office b12",
+    ),
 ]
 
 
 @pytest.fixture(scope="module")
-def store(tmp_path_factory: pytest.TempPathFactory) -> Store:
-    import os
-
-    os.environ["HOPTRACE_DATA_DIR"] = str(tmp_path_factory.mktemp("data"))
+def store(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Store]:
+    patcher = pytest.MonkeyPatch()
+    patcher.setenv("HOPTRACE_DATA_DIR", str(tmp_path_factory.mktemp("data")))
     store, report = ingest_path(OFFICE, "office", analyzer="english")
     assert report.documents == 25  # QUESTIONS.md lives OUTSIDE the corpus dir
     assert corpus_path("office").is_file()
-    return store
+    yield store
+    patcher.undo()
 
 
 @pytest.fixture(scope="module")
@@ -91,6 +97,22 @@ def test_designed_questions_missed_by_floor(
         f"{question!r} reached {answer_doc} lexically — the question is not"
         " single-hop-proof; fix the corpus or the question"
     )
+
+
+def test_two_bridge_question_is_reached_at_hop_two(store: Store, retriever: Retriever) -> None:
+    """Question 7: Alicja -> Marek Sosna -> Office B12; the answer file is two
+    bridges from the seed and the recorded path shows both, in order."""
+    gold = answer_chunks(store, "facilities/office-b12.md")
+    result = retriever.retrieve("What can the manager of Alicja Rud see from the window?", hops=2)
+    hit = next(e for e in result.evidence if e.chunk_id in gold)
+    assert hit.path.hop == 2
+    assert [edge.entity for edge in hit.path.edges][1:] == ["marek sosna", "office b12"]
+    assert hit.matched_terms == ()
+    assert [doc for _, doc in hit.path_docs] == [
+        "people/alicja-rud.md",
+        "people/marek-sosna.md",
+        "facilities/office-b12.md",
+    ]
 
 
 def test_weakly_lexical_case_documented(store: Store, retriever: Retriever) -> None:

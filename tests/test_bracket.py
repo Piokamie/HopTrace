@@ -30,8 +30,7 @@ def test_rows_and_counts(report) -> None:
 
 def test_hops_beat_floor_on_generated_bridges(report) -> None:
     floor, hop1, hop2 = report.rows
-    # multi-hop questions are single-hop-proof by construction, so the
-    # floor cannot fully cover them; hop retrieval must do strictly better
+    # generated multi-hop questions are single-hop-proof, so the floor cannot cover them fully
     assert hop1.all_gold > floor.all_gold
     assert hop2.all_gold >= hop1.all_gold * 0.99
 
@@ -69,3 +68,26 @@ def test_empty_corpus_raises() -> None:
     )
     with pytest.raises(ValueError, match="no benchmark questions"):
         run_bracket(store, n_questions=5)
+
+
+def test_verdict_is_derived_from_the_rows() -> None:
+    from hoptrace.bracket import SystemRow, verdict_for
+
+    floor = SystemRow("bm25-floor", 0.95, 0.92)
+    flat = [floor, SystemRow("hoptrace@1hop", 0.96, 0.93), SystemRow("hoptrace@2hop", 0.95, 0.92)]
+    code, text = verdict_for(flat, 0.05, 8, 5_000)
+    assert code == "single_hop" and "plain BM25" in text
+    lifted = [floor, SystemRow("hoptrace@1hop", 0.99, 0.99), SystemRow("hoptrace@2hop", 0.98, 0.97)]
+    code, text = verdict_for(lifted, 0.40, 8, 5_000)
+    assert code == "multi_hop" and "keep hops on (hoptrace@1hop)" in text
+    stuck = [floor, SystemRow("hoptrace@1hop", 0.95, 0.93), SystemRow("hoptrace@2hop", 0.95, 0.92)]
+    code, text = verdict_for(stuck, 0.40, 8, 5_000)
+    assert code == "hops_do_not_help" and "Use BM25" in text
+    code, text = verdict_for(lifted, 0.40, 8, 25)
+    assert code == "unstable" and "too few" in text
+
+
+def test_report_carries_verdict(report) -> None:
+    assert report.verdict_code in {"single_hop", "multi_hop", "hops_do_not_help", "unstable"}
+    assert "VERDICT:" in report.to_text()
+    assert report.verdict in report.to_text()

@@ -1,19 +1,13 @@
-"""The MCP server: HopTrace's four public tools over stdio.
+"""MCP server: ingest, retrieve, explain and bracket over stdio or streamable-http.
 
-    ingest(source, corpus_id, config?)    -> {chunks, entities, table_stats}
-    retrieve(query, corpus_id, hops?, k?) -> {evidence: [...]}
-    explain(chunk_id, corpus_id, query?)  -> {why: ...}
-    bracket(corpus_id, n_questions?)      -> {floor, ..., caveat}
-
-Deviation from DESIGN.md documented in the README: ``explain`` takes
-``corpus_id`` (chunk ids are per-corpus). Responses are plain JSON; hop
-paths ship both as structured edges and as the human-readable one-liner
-the generating model can cite verbatim.
+Chunk ids are per-corpus, so ``explain`` takes ``corpus_id``. Hop paths ship
+as structured edges plus the human-readable one-liner.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -34,21 +28,35 @@ from hoptrace.retrieve import Retriever
 from hoptrace.store import Store
 from hoptrace.tokenize import ANALYZERS, analyze
 
+
+def _package_version() -> str:
+    try:
+        return version("hoptrace")
+    except PackageNotFoundError:  # source checkout that was never installed
+        from hoptrace import __version__
+
+        return __version__
+
+
 mcp = MCPServer(
     "hoptrace",
+    version=_package_version(),
     instructions=(
         "HopTrace is a deterministic multi-hop retrieval engine. Call `retrieve`"
-        " to get evidence chunks with hop paths; cite paths verbatim (e.g."
-        " 'according to chunk#31, reached via Anna → Kowalski'). Call"
-        " `bracket` to measure whether this corpus needs hop retrieval at"
-        " all — its report includes its own caveats."
+        " to get evidence chunks with hop paths; each chunk names its source"
+        " file (chunk.doc, relative to source_root) and the path string can be"
+        " cited verbatim, e.g. 'according to people/marek-sosna.md (chunk#12),"
+        " reached via Alicja Rud → Marek Sosna'. If unresolved_mentions is"
+        " non-empty and every item is bm25_only, nothing was reached by hopping:"
+        " check matched_terms before trusting a result. Call `bracket` to"
+        " measure whether this corpus needs hop retrieval at all — its report"
+        " includes its own caveats."
     ),
 )
 
 _INGEST_CONFIG_KEYS = {"target_tokens", "max_tokens", "ner", "spacy_model", "analyzer"}
 
-#: explain() re-ranks the whole candidate pool (bounded by beam caps, in
-#: practice a few hundred) so below-default-k ranks stay visible.
+#: explain() ranks the whole pool (a few hundred at most) so below-k ranks stay visible.
 _EXPLAIN_PROBE_K = 10_000
 
 
@@ -57,9 +65,10 @@ class _CachedCorpus:
     store: Store
     retriever: Retriever
     mtime_ns: int
-    #: resolved path — HOPTRACE_DATA_DIR is re-read per call, so a cache entry
-    #: must never survive a data-dir change on an mtime coincidence.
+    #: HOPTRACE_DATA_DIR is re-read per call; guards against an mtime coincidence across dirs.
     path: Path
+    #: per (model, precision); an ONNX session is too expensive to rebuild per request
+    rerank_retrievers: dict[tuple[str | None, str | None], Retriever] = field(default_factory=dict)
 
 
 class CorpusRegistry:
@@ -141,16 +150,38 @@ def ingest_impl(
         "table_stats": report.table_stats,
         "skipped": list(report.skipped),
         "analyzer": analyzer,
+        "source_root": str(Path(source).expanduser().resolve()),
     }
 
 
-def retrieve_impl(query: str, corpus_id: str, hops: int = 2, k: int = 8) -> dict[str, Any]:
+def retrieve_impl(
+    query: str,
+    corpus_id: str,
+    hops: int = 2,
+    k: int = 8,
+    rerank: bool = False,
+    rerank_model: str | None = None,
+    rerank_precision: str | None = None,
+) -> dict[str, Any]:
     if hops not in (0, 1, 2):
         raise ValueError("hops must be 0, 1 or 2")
     if not 1 <= k <= 100:
         raise ValueError("k must be between 1 and 100")
     cached = _registry.get(corpus_id)
-    result = cached.retriever.retrieve(query, hops=hops, k=k)
+    retriever = cached.retriever
+    if rerank:
+        key = (rerank_model, rerank_precision)
+        if key not in cached.rerank_retrievers:
+            cached.rerank_retrievers[key] = Retriever(
+                cached.store,
+                RetrievalConfig(
+                    selection="rerank",
+                    rerank_model=rerank_model,
+                    rerank_precision=rerank_precision,
+                ),
+            )
+        retriever = cached.rerank_retrievers[key]
+    result = retriever.retrieve(query, hops=hops, k=k)
     return {
         "query": result.query,
         "evidence": [_evidence_payload(e) for e in result.evidence],
@@ -159,6 +190,8 @@ def retrieve_impl(query: str, corpus_id: str, hops: int = 2, k: int = 8) -> dict
         "pool_size": result.pool_size,
         "candidates_examined": result.candidates_examined,
         "notes": list(result.notes),
+        # absolute ingest root; join with evidence[].chunk.doc to link to the file
+        "source_root": cached.store.meta("source_root"),
     }
 
 
@@ -167,6 +200,7 @@ def explain_impl(chunk_id: int, corpus_id: str, query: str | None = None) -> dic
     store = cached.store
     row = store.get_chunk(chunk_id)  # raises KeyError -> tool error for bad ids
     payload: dict[str, Any] = {
+        "source_root": store.meta("source_root"),
         "chunk": {
             "id": row.chunk_id,
             "text": row.text,
@@ -179,8 +213,7 @@ def explain_impl(chunk_id: int, corpus_id: str, query: str | None = None) -> dic
     if query is None:
         return payload
 
-    # Rank the whole pool so the chunk's position is visible even when it
-    # fell below the default k.
+    # rank the whole pool so a chunk below the default k still shows its position
     probe = cached.retriever.retrieve(query, k=_EXPLAIN_PROBE_K)
     cfg_k = RetrievalConfig().k
     hit = next((e for e in probe.evidence if e.chunk_id == chunk_id), None)
@@ -218,6 +251,8 @@ def bracket_impl(corpus_id: str, n_questions: int = 100) -> dict[str, Any]:
         "oracle": report.oracle,
         "multihop_fraction": report.multihop_fraction,
         "miss_breakdown": report.miss_breakdown,
+        "verdict_code": report.verdict_code,
+        "verdict": report.verdict,
         "n_questions": report.n_questions,
         "n_multi_hop": report.n_multi_hop,
         "k": report.k,
@@ -241,6 +276,7 @@ def _evidence_payload(evidence: Evidence) -> dict[str, Any]:
         "path": evidence.path_string(),
         "path_edges": [asdict(edge) for edge in evidence.path.edges],
         "entities": list(evidence.matched_entities),
+        "matched_terms": list(evidence.matched_terms),
     }
 
 
@@ -255,11 +291,16 @@ def ingest(source: str, corpus_id: str, config: dict[str, Any] | None = None) ->
 
 
 @mcp.tool()
-def retrieve(query: str, corpus_id: str, hops: int = 2, k: int = 8) -> dict[str, Any]:
-    """Retrieve evidence chunks with hop paths. Each evidence item carries
-    a human-readable `path` you can cite verbatim, plus per-stage score
-    components. hops=0 is plain BM25."""
-    return retrieve_impl(query, corpus_id, hops, k)
+def retrieve(
+    query: str, corpus_id: str, hops: int = 2, k: int = 8, rerank: bool = False
+) -> dict[str, Any]:
+    """Retrieve evidence chunks with hop paths. Each evidence item names its
+    source file (chunk.doc, relative to the response's source_root) and
+    carries a human-readable `path` you can cite verbatim, plus per-stage
+    score components. hops=0 is plain BM25. rerank=true rescores top candidates
+    with the bundled path-aware cross-encoder (requires the rerank extra;
+    set HOPTRACE_RERANK_MODEL to point at another artifact)."""
+    return retrieve_impl(query, corpus_id, hops, k, rerank)
 
 
 @mcp.tool()
@@ -278,8 +319,16 @@ def bracket(corpus_id: str, n_questions: int = 100) -> dict[str, Any]:
     return bracket_impl(corpus_id, n_questions)
 
 
-def main() -> None:
-    mcp.run()
+def main(transport: str = "stdio", host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Run the MCP server.
+
+    stdio is the default because MCP clients spawn the server themselves.
+    streamable-http has no authentication: keep it on localhost or behind a proxy.
+    """
+    if transport == "stdio":
+        mcp.run()
+    else:
+        mcp.run(transport="streamable-http", host=host, port=port)
 
 
 if __name__ == "__main__":

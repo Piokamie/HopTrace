@@ -5,13 +5,10 @@ from hoptrace.ingest import SourceDocument, ingest_documents
 from hoptrace.retrieve import Retriever
 from hoptrace.store import Store
 
-# The DESIGN.md worked example, as documents: the answer chunk ("Kowalski
-# sits in 4B") shares no lexical overlap with the query "Where does Anna's
-# manager sit?" beyond the bridge entity.
+# The DESIGN.md worked example; p1 ("occupies", not "sits") has no lexical
+# overlap with the query and is reachable only through the kowalski bridge.
 DOCS = [
     SourceDocument("p0", "Anna Nowak reports to Kowalski on the platform team.", "p0"),
-    # deliberately zero lexical overlap with the test query ("occupies",
-    # not "sits") — reachable only through the kowalski bridge
     SourceDocument("p1", "Kowalski occupies Room 4B near the atrium.", "p1"),
     SourceDocument("p2", "The platform team ships the ingestion service.", "p2"),
     SourceDocument("p3", "The atrium cafe closes at five.", "p3"),
@@ -55,6 +52,11 @@ def test_path_string_cites_bridge(retriever: Retriever) -> None:
     rendered = answer.path_string()
     assert 'entity:"kowalski"' in rendered
     assert "chunk#2" in rendered
+    # every chunk on the path names its file, parents included
+    assert dict(answer.path_docs).keys() == {e.chunk_id for e in answer.path.edges}
+    assert f"chunk#2 ({answer.doc_path}:" in rendered
+    parent = answer.path.edges[0].chunk_id
+    assert f"chunk#{parent} ({dict(answer.path_docs)[parent]})" in rendered  # file, no snippet
 
 
 def test_provenance_components_present(retriever: Retriever) -> None:

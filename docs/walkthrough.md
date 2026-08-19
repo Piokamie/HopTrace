@@ -1,9 +1,10 @@
 # Walkthrough: a multi-hop retrieval, end to end
 
 Every transcript below is real output from the CLI against the shipped
-demo corpus ([examples/office](../examples/office)) — 25 short documents
+demo corpus (long `text:` lines elided with `…`, editorial notes marked
+`# …`) ([examples/office](../examples/office)) — 25 short documents
 about a fictional research institute, with entity bridges engineered so
-that six designed questions ([examples/QUESTIONS.md](../examples/QUESTIONS.md))
+that seven designed questions ([examples/QUESTIONS.md](../examples/QUESTIONS.md))
 are genuinely two-hop: their answer documents share no content words with
 the questions. All of this is pinned by
 [tests/test_demo_corpus.py](../tests/test_demo_corpus.py).
@@ -32,27 +33,26 @@ there:
 
 ```
 $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 0
-#1 chunk#8 [mention, hop 0] score 1.0000
-   path: query:"Alicja Rud" → chunk#8 ("Alicja Rud is a data engineer on the ingestion crew at Ostr…")
-   #2, #3, … are unrelated lexical matches; chunk#12 is absent
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.34, terms: Alicja, Rud)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
+# … #2, #3 are unrelated lexical matches; chunk#12 is absent
 ```
 
 With hop expansion, it appears at rank 2 — and says how it got there:
 
 ```
 $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2
-#1 chunk#8 [mention, hop 0] score 1.0000
-   path: query:"Alicja Rud" → chunk#8 ("Alicja Rud is a data engineer on the ingestion crew at Ostr…")
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.34, terms: Alicja, Rud)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
    text: Alicja Rud is a data engineer on the ingestion crew at Ostra Labs. …
-#2 chunk#12 [mention, hop 1] score 0.5231
-   path: query:"Alicja Rud" → chunk#8 → entity:"marek sosna" → chunk#12 ("Marek Sosna leads the ingestion crew. Colleagues describe M…")
-   text: Marek Sosna leads the ingestion crew. … He occupies Office B12 o…
+#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] score 0.5231 (bm25 0.00, terms: none)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew. Colleagues describe M…")
+   text: Marek Sosna leads the ingestion crew. … He occupies Office B12. …
 ```
 
-That path line is the product: the generating model (or the user) can
-cite it verbatim — *"according to chunk#12, reached via Alicja Rud →
-Marek Sosna"*. A hop is a join, not an inference, so the same query
-returns the same path every time.
+The path line is citable verbatim and names the file at every step:
+*"according to people/marek-sosna.md (chunk#12), reached via Alicja Rud
+→ Marek Sosna"*.
 
 ## 3. Why was that chunk retrieved? (`explain`)
 
@@ -61,7 +61,7 @@ $ hoptrace explain 12 --corpus office --query "Where does the manager of Alicja 
 chunk#12 (people/marek-sosna.md, title=Marek Sosna)
 entities: budynek a, marek sosna, office b12, tuesday
 for query 'Where does the manager of Alicja Rud sit?': rank #2 (top-k)
-path: query:"Alicja Rud" → chunk#8 → entity:"marek sosna" → chunk#12 ("Marek Sosna leads the ingestion crew. Colleagues describe M…")
+path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew. Colleagues describe M…")
   bm25 term 'where': tf=0 df=0 score=0.0000
   bm25 term 'doe': tf=0 df=0 score=0.0000
   bm25 term 'manag': tf=0 df=1 score=0.0000
@@ -70,12 +70,41 @@ path: query:"Alicja Rud" → chunk#8 → entity:"marek sosna" → chunk#12 ("Mar
   bm25 term 'sit': tf=0 df=1 score=0.0000
 ```
 
-Every BM25 term contributes exactly zero — the chunk shares not one word
-with the question. It was retrieved purely through the recorded entity
-path. This is what "auditable retrieval" means concretely: the answer to
-"why this chunk?" is a chain you can point at, not a cosine similarity.
+Every BM25 term contributes zero: the chunk shares no word with the
+question and was retrieved through the recorded entity path alone.
 
-## 4. Does this corpus even need hops? (`bracket`)
+## 4. Optional: the learned reranker (`--rerank`)
+
+Everything above is deterministic. With the `rerank` extra installed, the
+bundled path-aware cross-encoder (`models/hoptrace-rerank-minilm-l6`, int8
+graph) rescores the top candidates — it reorders the pool, it
+never reaches outside it:
+
+```
+$ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2 --rerank
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] rerank +4.818 (path 1.0000) (bm25 7.34, terms: Alicja, Rud)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
+#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +1.044 (path 0.5231) (bm25 0.00, terms: none)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew. Colleagues describe M…")
+#3 chunk#15 (people/tomasz-gil.md) [mention, hop 1] rerank -5.131 (path 0.3923) (bm25 0.00, terms: none)
+   path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"ostra lab" → chunk#15 (people/tomasz-gil.md: "Tomasz Gil maintains the procurement ledger and reconciles…")
+```
+
+`path` is the deterministic propagated score, `rerank` the learned one
+that set the order. They agree on the ranking here but not on
+confidence: the deterministic scorer separates the answer (0.5231) from
+an irrelevant hop through the "ostra lab" hub (0.3923) by 0.13, the
+reranker by 6.2 logits.
+
+Provenance is unchanged — same paths, same citation line (`text:` lines
+elided above). Reranking is opt-in; the deterministic interleave stays
+the default and both are reported in [results.md](results.md).
+`--rerank-precision fp32` loads the fp32 graph (a release download),
+`--rerank-model ms-marco-minilm-l6-v2` the zero-shot base, and any
+directory built by `training/` works as `--rerank-model`
+(`HOPTRACE_RERANK_MODEL` does the same for the MCP server).
+
+## 5. Does this corpus even need hops? (`bracket`)
 
 ```
 $ hoptrace bracket --corpus office -n 20
@@ -87,18 +116,18 @@ bracket over 15 generated questions (10 single-hop, 5 multi-hop), corpus 25 chun
   multihop_fraction (floor-insufficiency): 0.3333
   misses at 2hop: extraction=0, ranking=0, hop_bound=0, seed_alias=0
   note: corpus supported only 15 of 20 requested questions
+  VERDICT: 25 chunks is too few for a stable reading (the fraction swings with -n); indicative only: 33% of generated questions need more than the BM25 floor, and hoptrace@1hop lifts all-gold@8 from 0.67 to 1.00 (+0.33). Entity-bridged multi-hop is real on this corpus; keep hops on (hoptrace@1hop).
   CAVEAT: self-benchmark: questions are generated from this corpus's own entity index, so extraction misses are invisible by construction and floor-vs-HopTrace comparisons favor HopTrace. Use this bracket to judge whether hop retrieval functions on YOUR corpus and how much of it is multi-hop — never as cross-system evidence.
 ```
 
-The bracket answers the buying question per corpus: here, ~33% of
-generated questions are beyond the floor, and hop retrieval covers all of
-them. On a corpus where `multihop_fraction` comes back near zero, the
-honest recommendation is printed by the tool itself: use BM25, keep your
-money. Note the caveat is part of the report — the self-benchmark is a
-plumbing diagnostic, never evidence. The externally-validated numbers
-live in [results.md](results.md).
+Here ~33% of generated questions are beyond the floor and hop retrieval
+covers them; the `VERDICT` line says so — and says when the corpus is too
+small to trust the number. Where `multihop_fraction` comes back near zero
+the verdict reads "effectively single-hop: plain BM25 … covers it", which
+is the bracket recommending against its own product. The self-benchmark is a plumbing diagnostic; externally-validated
+numbers are in [results.md](results.md).
 
-## 5. The same four verbs over MCP
+## 6. The same four verbs over MCP
 
 `hoptrace serve` exposes `ingest`, `retrieve`, `explain`, and `bracket` as
 MCP tools over stdio. Claude Desktop / Claude Code configuration:
@@ -117,5 +146,5 @@ MCP tools over stdio. Claude Desktop / Claude Code configuration:
 
 The `retrieve` tool returns the same evidence with both the structured
 edges and the citable path strings; the server's instructions teach the
-client to surface them ("according to chunk#12, reached via Alicja Rud →
+client to surface them ("according to people/marek-sosna.md (chunk#12), reached via Alicja Rud →
 Marek Sosna").

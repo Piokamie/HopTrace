@@ -1,13 +1,16 @@
 # Designed multi-hop questions
 
-Each question below is genuinely 2-hop by construction: the answer
+Each question below is genuinely multi-hop by construction: the answer
 document shares **no content words** with the question — it is reachable
 only by following the bridge entity from the seed document. The floor
-(hops=0) cannot surface the answer; hop retrieval must.
+(hops=0) cannot surface the answer; hop retrieval must. Question 7 needs
+two bridges in a row (`hop 2`): Marek's file names only his office, and
+only the office file says what is outside it.
 
 | # | Question | Seed doc | Bridge entity | Answer doc |
 |---|---|---|---|---|
 | 1 | Where does the manager of Alicja Rud sit? | people/alicja-rud.md | Marek Sosna | people/marek-sosna.md ("occupies Office B12") |
+| 7 | What can the manager of Alicja Rud see from the window? | people/alicja-rud.md | Marek Sosna, then Office B12 (two bridges) | facilities/office-b12.md ("a view of the courtyard birches") |
 | 2 | What equipment is in the room where the calibration team meets? | teams/calibration-team.md | Hala D | facilities/hala-d.md ("spectrometer rig and two argon lasers") |
 | 3 | Which initiative involves the person who maintains the procurement ledger? | people/tomasz-gil.md | Tomasz Gil | projects/vega.md ("Tomasz Gil contributes weekly to Project Vega") |
 | 4 | Who approves invoices sent by the vendor servicing the elevators? | vendors/koleo-serwis.md | Koleo Serwis | people/beata-lis.md ("Statements … cleared by Beata Lis") |

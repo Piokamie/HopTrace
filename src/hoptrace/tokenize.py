@@ -1,11 +1,10 @@
-"""Shared word tokenizer used by chunk sizing, BM25 postings, and queries.
+"""Shared word tokenizer for chunk sizing, BM25 postings, and queries; all
+three must agree or BM25 statistics drift.
 
-One tokenizer for everything: chunk token counts, index-time postings, and
-query-time terms must agree or BM25 statistics silently drift. Two
-analyzers: ``simple`` (plain lowercase tokens) and ``english``
-(Lucene-style stopword removal + Porter stemming — required to reproduce
-the published BM25 baselines, and the ingest default). The analyzer used
-at ingest is recorded in corpus meta and read back at query time.
+Analyzers: ``simple`` (lowercase tokens) and ``english`` (Lucene-style
+stopwords + Porter stemming, needed to reproduce published BM25 baselines;
+the ingest default). The ingest analyzer is recorded in corpus meta and
+read back at query time.
 """
 
 from __future__ import annotations
@@ -64,12 +63,7 @@ def tokenize(text: str) -> list[str]:
 
 
 def analyze(text: str, analyzer: str = "simple") -> list[str]:
-    """Index/query terms under the named analyzer.
-
-    ``simple`` is plain :func:`tokenize`; ``english`` mimics Lucene's
-    EnglishAnalyzer (stopword removal + Porter stemming), which the
-    published BM25 baselines HopTrace must reproduce were built with.
-    """
+    """Index/query terms under the named analyzer."""
     tokens = tokenize(text)
     if analyzer == "simple":
         return tokens

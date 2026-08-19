@@ -18,6 +18,8 @@ build/
 
 # HopTrace local data (corpora, downloaded datasets)
 .hoptrace/
+# bundled reranker: the torch checkpoint never ships, only the ONNX graphs
+models/**/hf/
 
 # IDE / OS / local tooling
 .idea/

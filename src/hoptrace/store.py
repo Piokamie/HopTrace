@@ -1,14 +1,10 @@
-"""SQLite persistence: one corpus per database file, packed BM25 postings.
+"""SQLite persistence: one corpus per database file.
 
-Write path: ``StoreWriter`` builds a fresh database at ``<target>.tmp`` and
-atomically replaces the target on ``finish()``, so readers never observe a
-half-built corpus and no write-ahead logging is needed — a crashed build
-leaves only a stale tmp file. Read path: ``Store`` opens read-only.
-
-Postings are stored one row per *term* as a packed blob of
-``(chunk_id uint32, tf uint16)`` pairs: at millions of chunks a
-row-per-posting table would hold ~10^8 rows, while a blob decodes straight
-into an array.
+``StoreWriter`` builds ``<target>.tmp`` and atomically replaces the target
+on ``finish()``, so readers never see a half-built corpus; ``Store`` opens
+read-only. Postings are one row per term holding a packed blob of
+``(chunk_id uint32, tf uint16)`` pairs (a row per posting would be ~10^8
+rows at corpus scale).
 """
 
 from __future__ import annotations
@@ -67,9 +63,8 @@ CREATE TABLE postings(
     df INTEGER NOT NULL,
     blob BLOB NOT NULL
 );
--- Analyzed term count per chunk: BM25's document length. Distinct from
--- chunks.n_tokens (raw tokenizer count used for chunk sizing) because the
--- analyzer may drop stopwords and stem.
+-- BM25 document length (analyzed terms); differs from chunks.n_tokens, the
+-- raw tokenizer count used for chunk sizing.
 CREATE TABLE chunk_terms(
     chunk_id INTEGER PRIMARY KEY,
     n_terms INTEGER NOT NULL
@@ -81,18 +76,13 @@ CREATE TABLE corpus_stats(
 );
 """
 
-# Secondary indexes on mentions are created at finish() rather than with the
-# schema: incremental maintenance during a corpus-scale bulk load thrashes
-# the page cache (random entity order), while a post-hoc CREATE INDEX is one
-# sorted build.
+# Created at finish(): maintaining these during a bulk load thrashes the page cache.
 _MENTION_INDEXES = """
 CREATE INDEX idx_mentions_entity ON mentions(entity);
 CREATE INDEX idx_mentions_chunk ON mentions(chunk_id);
 """
 
-# Per-entity document frequency, materialized at finish(): hop expansion
-# consults df for every co-occurring entity of every frontier chunk — too
-# hot for a per-lookup COUNT(DISTINCT) against mentions.
+# Materialized at finish(): hop expansion reads df too often for a COUNT(DISTINCT) per lookup.
 _ENTITY_STATS = """
 CREATE TABLE entity_stats AS
     SELECT entity, COUNT(DISTINCT chunk_id) AS df FROM mentions GROUP BY entity;
@@ -134,10 +124,8 @@ class StoreWriter:
             self._tmp = target.with_name(target.name + ".tmp")
             self._tmp.unlink(missing_ok=True)
             self._conn = sqlite3.connect(self._tmp)
-            # The tmp file is discarded on any failure, so durability
-            # pragmas only slow the build down. The page cache must hold
-            # the hot interior of the mentions b-tree (random insert
-            # order); the default ~2 MB collapses corpus-scale builds.
+            # Durability is pointless (tmp is discarded on failure); the default
+            # ~2 MB page cache collapses corpus-scale builds of the mentions b-tree.
             self._conn.execute("PRAGMA journal_mode = OFF")
             self._conn.execute("PRAGMA synchronous = OFF")
             self._conn.execute(f"PRAGMA cache_size = {-1024 * cache_mb}")
@@ -251,9 +239,7 @@ class StoreWriter:
 
 
 def ensure_entity_stats(path: Path) -> bool:
-    """Idempotent migration: materialize entity_stats on a pre-existing
-    corpus built before the table was part of finish(). Returns True if the
-    table was created, False if it already existed."""
+    """Materialize entity_stats on an older corpus that lacks it; True if created."""
     conn = sqlite3.connect(path)
     try:
         exists = conn.execute(
@@ -390,8 +376,7 @@ class Store:
         return [str(r[0]) for r in rows]
 
     def entity_chunk_counts(self, entity: str, limit: int) -> list[tuple[int, int]]:
-        """(chunk_id, mention_count) for an entity, ranked by count desc
-        then chunk_id — one aggregated query, not one per chunk."""
+        """(chunk_id, mention_count) for an entity, by count desc then chunk_id."""
         rows = self._conn.execute(
             "SELECT chunk_id, COUNT(*) AS n FROM mentions WHERE entity = ?"
             " GROUP BY chunk_id ORDER BY n DESC, chunk_id LIMIT ?",
@@ -411,7 +396,7 @@ class Store:
         return [] if row is None else unpack_postings(row[0])
 
     def postings_blob(self, term: str) -> tuple[int, bytes] | None:
-        """(df, packed blob) for numpy decoding without Python-tuple overhead."""
+        """(df, packed blob) for numpy decoding."""
         row = self._conn.execute("SELECT df, blob FROM postings WHERE term = ?", (term,)).fetchone()
         return None if row is None else (int(row[0]), bytes(row[1]))
 

@@ -1,10 +1,8 @@
 """Dataset registry: pinned URLs, sizes, checksums, published baselines.
 
 Datasets are downloaded to ``$HOPTRACE_DATA_DIR/datasets/`` on first use and
-never committed. URLs, sizes and the gate baseline were verified live on
-2026-08-13; SHA256 values are pinned after the first verified download —
-``sha256=None`` means "record on first download", a mismatch against a
-pinned value is a hard error.
+never committed. ``sha256=None`` means "record on first download"; a mismatch
+against a pinned or recorded value is a hard error.
 """
 
 from __future__ import annotations
@@ -25,13 +23,17 @@ class DatasetSpec:
     name: str
     url: str
     filename: str
-    #: Approximate size in bytes as verified live (informational).
+    #: Approximate size in bytes (informational).
     size: int
     license: str
     sha256: str | None = None
     #: For zip archives: directory created under datasets/ after extraction.
     extract_dir: str | None = None
 
+
+#: HippoRAG `legacy` branch, pinned to a commit so the published sample cannot drift.
+_HIPPORAG_COMMIT = "b144c46df14cabe5f5822d8caded4bec5f709461"
+_HIPPORAG_RAW = f"https://raw.githubusercontent.com/OSU-NLP-Group/HippoRAG/{_HIPPORAG_COMMIT}/data"
 
 DATASETS: dict[str, DatasetSpec] = {
     "beir-hotpotqa": DatasetSpec(
@@ -54,6 +56,74 @@ DATASETS: dict[str, DatasetSpec] = {
         license="CC BY 4.0",
         sha256=None,
     ),
+    # Train split — for the training-data builder, not evaluation.
+    "musique-train": DatasetSpec(
+        name="musique-train",
+        url=(
+            "https://huggingface.co/datasets/dgslibisey/MuSiQue/resolve/main/"
+            "musique_ans_v1.0_train.jsonl"
+        ),
+        filename="musique_ans_v1.0_train.jsonl",
+        size=241_046_755,
+        license="CC BY 4.0",
+        sha256=None,
+    ),
+    # HippoRAG's published validation samples and corpora (Gutiérrez et al.,
+    # NeurIPS 2024); digest-pinned because they define the comparable protocol.
+    **{
+        f"hipporag-{short}{suffix_name}": DatasetSpec(
+            name=f"hipporag-{short}{suffix_name}",
+            url=f"{_HIPPORAG_RAW}/{stem}{suffix_file}.json",
+            filename=f"hipporag_{stem}{suffix_file}.json",
+            size=size,
+            license="MIT (HippoRAG packaging); CC BY 4.0 MuSiQue / Apache-2.0 2Wiki",
+            sha256=digest,
+        )
+        for short, stem, suffix_name, suffix_file, size, digest in (
+            (
+                "musique",
+                "musique",
+                "",
+                "",
+                12_543_629,
+                "98ed4e21d3076532f6388d42320fb809599c63a0d8dffca8ece5e41922be6b46",
+            ),
+            (
+                "musique",
+                "musique",
+                "-corpus",
+                "_corpus",
+                6_239_261,
+                "73157a03ce3f0b1a5673dd5dc12bb970c24976dbffc688af9eecdd758c97ffcb",
+            ),
+            (
+                "2wiki",
+                "2wikimultihopqa",
+                "",
+                "",
+                6_505_789,
+                "895cba294064df0c3302c76847b1fc08d99b5619f7663dfaa3b65cd780f1cac4",
+            ),
+            (
+                "2wiki",
+                "2wikimultihopqa",
+                "-corpus",
+                "_corpus",
+                3_083_943,
+                "9d6e352952aafb18dab22bf8195039461321a44a949df902ae83bce134ad238a",
+            ),
+        )
+    },
+    # Train split — corpus mass for the all-splits pooled protocol only;
+    # 2Wiki is the transfer holdout (ADR 0011), not a training source.
+    "2wiki-train": DatasetSpec(
+        name="2wiki-train",
+        url="https://huggingface.co/datasets/voidful/2WikiMultihopQA/resolve/main/train.json",
+        filename="2wiki_train.json",
+        size=681_705_246,
+        license="Apache-2.0",
+        sha256=None,
+    ),
     "2wiki": DatasetSpec(
         name="2wiki",
         url="https://huggingface.co/datasets/voidful/2WikiMultihopQA/resolve/main/dev.json",
@@ -62,9 +132,7 @@ DATASETS: dict[str, DatasetSpec] = {
         license="Apache-2.0",
         sha256=None,
     ),
-    # The official host (curtis.ml.cmu.edu) was unreachable at verification
-    # time; the distractor sanity check runs on MuSiQue/2Wiki per-question
-    # paragraphs instead, and HotpotQA corpus-scale is covered via BEIR.
+    # Host unreliable; the distractor sanity check runs on MuSiQue/2Wiki instead.
     "hotpotqa-distractor": DatasetSpec(
         name="hotpotqa-distractor",
         url="http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json",
@@ -75,17 +143,13 @@ DATASETS: dict[str, DatasetSpec] = {
     ),
 }
 
-#: BM25 parameters every eval run uses — the published-baseline
-#: configuration (Anserini defaults). Single source for all harness
-#: signatures and CLI defaults.
+#: BM25 parameters for every eval run (Anserini defaults, the published-baseline configuration).
 EVAL_K1 = 0.9
 EVAL_B = 0.4
 
-#: Gate target for the flat index HopTrace builds (title concatenated into
-#: text). Sources: Pyserini BEIR reproduction matrix
-#: (castorini.github.io/pyserini/2cr/beir.html, BM25 "flat"), and the BEIR
-#: paper (Thakur et al., NeurIPS 2021, Table 2; Anserini multifield,
-#: k1=0.9, b=0.4) as secondary reference.
+#: Gate targets for the flat index (title concatenated into text). Sources:
+#: Pyserini BEIR reproduction matrix (castorini.github.io/pyserini/2cr/beir.html)
+#: and the BEIR paper (Thakur et al., NeurIPS 2021, Table 2).
 BEIR_HOTPOTQA_BASELINES = {
     "bm25_flat_ndcg10": 0.633,
     "bm25_flat_recall100": 0.796,
@@ -152,9 +216,8 @@ def ensure_dataset(name: str) -> Path:
 
 
 def _recorded_sha(root: Path, filename: str) -> str | None:
-    """Digest recorded on the first verified download — read back so a
-    re-download (or tampering) cannot silently pass when the spec ships
-    ``sha256=None``."""
+    """Digest recorded on first download, so a later re-download is still
+    checked when the spec has ``sha256=None``."""
     sidecar = root / f"{filename}.sha256"
     if not sidecar.is_file():
         return None

@@ -1,9 +1,8 @@
-"""Structural chunking: heading and paragraph boundaries first, windows never.
+"""Structural chunking on heading and paragraph boundaries.
 
-Paragraphs are packed greedily up to the target size but a pack never
-crosses a heading boundary. A paragraph larger than ``max_tokens`` is split
-at sentence boundaries; a single sentence longer than the target stands
-alone rather than being cut mid-sentence.
+Paragraphs are packed greedily up to the target size; a pack never crosses
+a heading. A paragraph over ``max_tokens`` is split at sentence boundaries,
+and a single over-long sentence stands alone.
 """
 
 from __future__ import annotations

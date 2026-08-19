@@ -1,16 +1,11 @@
-"""Rule-based mention extraction. Deterministic, versioned, no LLM.
+"""Rule-based mention extraction: capitalized spans, quoted terms, code
+identifiers, numbers with units, optional spaCy NER (``ner`` flag).
+Overlaps resolve longest-first. Bump ``EXTRACTOR_VERSION`` on any rule
+change; it is stored per corpus.
 
-Passes: capitalized spans, quoted terms, code identifiers, numbers with
-units. An optional spaCy NER pass adds candidates behind the ``ner`` config
-flag. Overlapping candidates are resolved longest-first. Bump
-``EXTRACTOR_VERSION`` on any change to the rules — it is stored per corpus
-and gates the regression bracket.
-
-Sentence-initial capitalization is ambiguous ("Yesterday" vs. "Anna"), so
-a capitalized word in sentence-initial position is only trusted when the
-same word also appears capitalized in a non-initial position — in the same
-text or anywhere in the corpus (callers pass corpus-wide evidence via
-``corpus_caps``; see ``collect_non_initial_caps``).
+A sentence-initial capitalized word ("Yesterday" vs. "Anna") is trusted only
+if the same word appears capitalized non-initially in the text or in
+``corpus_caps`` (see ``collect_non_initial_caps``).
 """
 
 from __future__ import annotations
@@ -62,11 +57,9 @@ _SINGLE_TOKEN_STOP = frozenset(
 
 
 class _TrustAllCaps:
-    """Sentinel trust set for query-time extraction: user-authored queries
-    capitalize deliberately, so the prose-oriented sentence-initial
-    distrust rule must not eat a query-leading entity ("Kowalski office
-    location?"). Junk admissions are filtered downstream by index
-    resolution, and failures surface in ``unresolved_mentions``."""
+    """Trust set for query-time extraction: queries capitalize deliberately,
+    so a query-leading entity ("Kowalski office location?") must survive
+    the sentence-initial rule."""
 
     def __contains__(self, item: object) -> bool:
         return True
@@ -87,11 +80,7 @@ class Mention:
 
 
 def collect_non_initial_caps(text: str) -> frozenset[str]:
-    """Casefolded words seen capitalized in non-sentence-initial position.
-
-    Ingest runs this over every chunk first, then feeds the union back into
-    ``extract`` so sentence-initial names are recognized corpus-wide.
-    """
+    """Casefolded words seen capitalized in non-sentence-initial position."""
     tokens = list(_TOKEN_RE.finditer(text))
     return frozenset(
         tokens[i].group(0).casefold()
@@ -157,17 +146,15 @@ def _load_spacy(model: str) -> Language:
 def _capitalized_spans(text: str, corpus_caps: AbstractSet[str]) -> list[tuple[int, int]]:
     """Runs of 1-4 adjacent capitalized tokens.
 
-    Sentence-initial handling: a single capitalized sentence opener is kept
-    only if trusted (seen capitalized non-initially in this text or in
-    ``corpus_caps``); an untrusted sentence opener heading a longer run is
-    dropped from the run ("Yesterday Anna Kowalska" yields "Anna Kowalska").
+    A lone sentence opener is kept only if trusted; an untrusted opener
+    heading a longer run is dropped from it ("Yesterday Anna Kowalska"
+    yields "Anna Kowalska").
     """
     tokens = list(_TOKEN_RE.finditer(text))
     capitalized = [t.group(0)[0].isupper() for t in tokens]
     initial = [_is_sentence_initial(text, tokens, i) for i in range(len(tokens))]
 
-    # corpus_caps can hold millions of entries and this runs once per
-    # chunk — membership-test both sets, never merge/copy.
+    # corpus_caps may hold millions of entries: test membership in both, don't merge.
     local_caps = {
         tokens[i].group(0).casefold()
         for i in range(len(tokens))

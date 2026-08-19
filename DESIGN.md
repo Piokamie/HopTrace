@@ -1,20 +1,10 @@
 # HopTrace — deterministic multi-hop retrieval with traces
 
-> Formerly "LRAG". Renamed (ADR 0009): this engine retrieves — the
-> "augmented generation" was always the external model's job, and the
-> learned component is a v2 ranking layer, not the product's identity.
-> HopTrace names what ships: hop retrieval, with the trace attached.
-
-**Evidence delivery for LLMs: deterministic multi-hop retrieval, a learned
-ranker only where ranking is genuinely hard, and per-corpus measurement that
-tells you whether any of it was needed.**
-
 HopTrace is a local, LLM-free retrieval engine exposed over MCP. The intended
 flow: the user asks their assistant (Claude or any MCP client) a question,
 the assistant calls HopTrace, HopTrace returns evidence chunks *with the path it
-took to find them*, and the assistant generates the answer. No LLM calls at
-ingest. No LLM calls at retrieval. The only model you pay for is the one
-writing the answer.
+took to find them*, and the assistant generates the answer. No LLM calls
+at ingest, none at retrieval.
 
 ## The problem
 
@@ -23,9 +13,9 @@ nearest chunks, hope the evidence resembles the question. Three failure
 modes are structural, not tunable:
 
 1. **Multi-hop evidence is unreachable by construction.** "Where does
-   Anna's manager sit?" — the chunk naming the manager's office shares no
-   surface or embedding similarity with the query. It is only findable
-   *from* the chunk that names Anna's manager. One-shot retrieval cannot
+   Alicja Rud's manager sit?" — the chunk naming the manager's office
+   shares no surface or embedding similarity with the query. It is only
+   findable *from* the chunk that names Alicja Rud's manager. One-shot retrieval cannot
    take that step, at any k, with any embedding model.
 2. **Paraphrase brittleness.** When the query phrases things differently
    than the document, nearest-neighbor recall degrades quietly — and
@@ -34,11 +24,13 @@ modes are structural, not tunable:
    say *why* a chunk was retrieved or *what was missed*, which makes
    failures undebuggable and client conversations vibes-based.
 
-The industry's fixes each pay a heavy toll: agentic retrieval loops put an
-LLM in the query path (latency, cost, nondeterminism); graph-RAG systems
-put an LLM in the ingest path (cost per corpus, stale graphs, re-ingest
-bills). HopTrace's bet is that most of what those LLM calls buy is available
-deterministically.
+Common fixes place an LLM somewhere in the path: agentic retrieval loops
+at query time (latency, cost, nondeterminism); graph-RAG systems such as
+GraphRAG and LightRAG at ingest time (cost per corpus, stale graphs,
+re-ingest bills). HopTrace's index is deterministic instead — rebuild is
+free, extraction is versioned, and every edge points at the text that
+produced it — which tests how much of what those calls buy is available
+without them.
 
 ## Design principles
 
@@ -48,13 +40,12 @@ deterministically.
    join, not an inference.
 2. **Learned only where selection is genuinely hard.** Hop expansion
    over-generates candidates. Ranking a few hundred candidates against a
-   query is the one place a model earns its keep — a small, local one,
-   ranking chunks it was *given*, never retrieving on its own.
+   query is the only stage that needs a model: a small local one that
+   ranks chunks it was given.
 3. **Measure before believing.** Every corpus gets an evaluation bracket:
    a lexical-baseline floor, an oracle-evidence ceiling, and the fraction
    of questions that are multi-hop at all. If top-k already sits near the
-   ceiling on a client's corpus, HopTrace's own report says so — the tool tells
-   you when you don't need it.
+   ceiling on a corpus, the report says so.
 
 ## Architecture
 
@@ -69,13 +60,13 @@ documents → chunker → mention extractor → tables
 - **Mention extractor**: rule-based surface-form extraction (capitalized
   spans, quoted terms, code identifiers, numbers-with-units) plus an
   optional off-the-shelf NER pass. No LLM. Extraction is deterministic and
-  versioned — re-ingest is seconds, not dollars.
+  versioned, so re-ingest is cheap.
 - **Tables** (SQLite; shipped schema in `store.py`):
   - `mentions(entity, chunk_id, span_start, span_end, surface)` — the
     inverted index, one row per occurrence (counts derived by SQL)
   - `cooccur(chunk_id, entity)` — a VIEW over mentions, not a copy
   - `aliases(surface, canonical)` — seeded from trivial normalization
-    (case, punctuation, plural); pluggable for more (v2)
+    (case, punctuation, plural); pluggable for more (roadmap)
 
 ### Retrieval
 
@@ -92,14 +83,14 @@ query → query mentions → seed chunks → bounded hop expansion → scoring �
    a scoring feature: entities are ranked by inverse document frequency
    before traversal, and hub entities above an empirically tuned
    document-frequency cap are never followed (at corpus scale real hubs
-   sit near df ≈ 0.1% of chunks, so the cap must be set from data, not
-   intuition — IDF ranking does most of the work and the cap handles the
-   tail). Without this, frequent entities — years, common first names, the
-   corpus's own company name — connect everything to everything and fill
-   the beam with junk before any scorer can help. The filter's value is
-   itself measured (see metrology: hop-2 pool precision).
+   sit near df ≈ 0.1% of chunks; IDF ranking does most of the work and the
+   cap handles the tail). Without this, frequent entities — years, common
+   first names, the corpus's own company name — connect everything to
+   everything and fill the beam with junk. Hop-2 pool precision measures
+   the filter's effect.
    Every reached chunk records its **hop path**:
-   `query:"Anna" → chunk#12 ("Anna reports to Kowalski") → entity:"Kowalski" → chunk#31 ("Kowalski sits in 4B")`.
+   `query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew…")`
+   — every step names the chunk and the file it came from.
 3. **Scoring/selection**:
    - v1: two populations, two scales. Seed chunks are scored by query
      relevance (BM25, ratio-normalized; mention seeds by the stronger of
@@ -117,89 +108,75 @@ query → query mentions → seed chunks → bounded hop expansion → scoring �
      (marginal-coverage, facility-location/MMR lineage) is implemented
      but experimental: its first validation showed that no gold-blind
      static coverage rule separates gold routes from junk routes — a
-     bounded universe starves multi-hop targets, an unbounded one floods
-     (ADR 0008). That separation is precisely what the v2 learned ranker
-     is for. Hop decay emerges from the product of bridge strengths
-     instead of a tuned constant.
-   - v2: a small learned reranker (cross-encoder scale, CPU-friendly)
-     over the candidate pool. The ranker sees candidates and query only —
-     it cannot reach outside the pool, so retrieval stays auditable. It
-     must beat the propagated deterministic baseline, not a strawman that
-     misprices hop-2 candidates by query similarity.
+     bounded universe starves multi-hop targets, an unbounded one floods.
+     That separation is the v2 ranker's job. Hop decay emerges from the
+     product of bridge strengths, not a tuned constant.
+   - v2 (shipped, opt-in): a **path-aware** cross-encoder rescoring the
+     pool (ADR 0010, 0012). Its input is (query,
+     candidate, *route context*) — the bridge entity of the last edge
+     plus a snippet of the hop-1 parent — so what it learns is route
+     quality, which no static rule supplies. Only the top-N candidates in
+     deterministic interleave order are rescored
+     (`Retriever.candidate_window`, shared with the training builder), so
+     the ranker still cannot reach outside the pool and retrieval stays
+     auditable. It is evaluated against the
+     propagated deterministic baseline; the zero-shot control shows route
+     context buying complete-evidence recall on its own (docs/results.md).
 4. **Output**: chunks with provenance objects — matched entities, hop
    paths, per-stage scores. The generating model (and the user) can see
    exactly why each piece of evidence arrived.
 
-### Why the ranker is learned and the hops are not
+### Learned ranking, deterministic hops
 
 Hops are cheap, exact, and enumerable — learning them would be re-deriving
-a join with gradient descent. Ranking is the opposite: relevance of a
-hop-2 chunk to the original question is contextual and fuzzy. Spend the
-model where the problem is actually statistical.
+a join with gradient descent. Ranking is not: the relevance of a hop-2
+chunk to the original question is contextual and fuzzy. ADR 0008 records
+where that boundary sits — deterministic selection pushed to its edge
+met a trilemma (unbounded coverage floods, query-anchored coverage
+starves multi-hop targets, every interpolation needs a constant only the
+eval can set), so route quality is statistical, and it is what the
+ranker learns.
 
-That claim is no longer intuition — the harness located its boundary
-(ADR 0008). Deterministic selection was pushed to its edge: propagated
-path scores, then greedy marginal-coverage admission over the candidate
-pool. The gold-aware displacement audit measured the resulting trilemma:
-an *unbounded* coverage universe floods, because candidates mint their own
-novelty and junk routes outnumber gold routes by orders of magnitude; a
-*query-anchored* universe starves multi-hop targets by construction,
-because containing no query content is precisely what makes a target
-multi-hop; and every interpolation between the two carries a constant that
-can only be set by peeking at the eval. Route quality is therefore
-genuinely statistical, not bookkeeping — a measured existence theorem for
-the learned ranker, not a "ML goes here" sticker. It also fixes the
-ranker's job description exactly: learn the one quantity no static rule
-can supply (route quality), inside an objective shape the audit already
-validated (marginal completion), behind a leakage line already drawn (the
-proxy is never tuned on the audit's gold).
+The unbounded horn assumes an entity universe minted from free text. A
+curated controlled vocabulary — CMS taxonomies, category trees, author
+registries — fixes that universe, which makes bounded-coverage selection
+workable on such corpora. Coverage gaps surface as extraction misses.
 
-One qualification is corpus-dependent: the trilemma's unbounded horn
-assumes the entity universe is minted from free text, where candidates
-can print their own novelty. Sources that ship a curated controlled
-vocabulary — CMS taxonomies, category trees, author registries — supply
-an externally fixed coverage universe that candidates cannot inflate,
-which reopens bounded-coverage selection as a deterministic option in
-exactly those deployments. Whether the curated vocabulary actually covers
-the bridges that matter is itself measurable (it surfaces as extraction
-misses in the breakdown), so the choice between curated-universe
-selection and the learned ranker is a per-corpus reading, not a belief.
+Reranker training data comes from the external benchmarks, never from the
+self-benchmark: labels derived from the same extraction that generated
+the candidates would fit the model to the index's own blind spots.
 
-One training note from the roadmap: reranker training data comes from the
-external benchmarks (see metrology below), never from the self-benchmark —
-training on labels derived from the same extraction that generated the
-candidates would fit the model to the index's own blind spots. And hop-2
-relevance labels only make sense once hop-1 selection is decent — the
-training curriculum goes one hop at a time.
-
-## Metrology (the part nobody ships)
+## Metrology
 
 Measurement comes from two places with very different evidential weight.
 
 ### External benchmarks (the headline numbers)
 
-Retrieval quality is proven on externally authored multi-hop QA datasets,
-at **corpus scale** — hop expansion over ten distractor paragraphs is
+Retrieval quality is measured on externally authored multi-hop QA
+datasets at corpus scale — hop expansion over ten distractor paragraphs is
 reranking, not retrieval, and recall saturates there for almost any
 method. The distractor setting is reported only as a secondary sanity
 check. Each dataset has a distinct job:
 
-- **MuSiQue** (the multi-hop headline): constructed specifically to defeat
-  single-hop shortcuts — the known-positive, where multi-hop machinery
-  should earn its keep or the whole thesis fails. Evaluated over the
-  pooled paragraph corpus of its dev split.
+- **MuSiQue** (the multi-hop headline): constructed to defeat single-hop
+  shortcuts — the known-positive, where multi-hop retrieval should show
+  a gain. Reported on HippoRAG's published 1,000-question sample and
+  11,656-passage corpus (the externally comparable protocol); the pooled
+  dev-split corpus is the development setting.
 - **HotpotQA via BEIR** (scale + known-negative): the full ~5M-passage
   BEIR corpus, retrieval-level metrics, published BM25 and dense baselines
   to compare against directly. It is also the calibration negative for the
   multi-hop diagnostic: the literature documents that a large share of its
   questions are answerable from one paragraph despite two being annotated.
-- **2WikiMultihopQA** (discrimination): sits between the two and tests
-  whether the diagnostic can tell them apart.
+- **2WikiMultihopQA** (discrimination, and the reranker's transfer
+  holdout): sits between the two and tests whether the diagnostic can
+  tell them apart; reported on HippoRAG's published sample and corpus.
+  Never enters reranker training.
 
 **Protocol.** Comparisons are budget-matched: every system returns the
 same k, and the table reports candidates examined and wall-clock latency
-alongside recall — a win that costs 50× the compute is still a result,
-but it is stated as one. Gold supporting facts are finer-grained than
+alongside recall, so a win that costs 50× the compute is visible as
+such. Gold supporting facts are finer-grained than
 chunks, so the hit rule is explicit and printed in every report: in eval
 mode one source paragraph is one chunk (identity-preserving, no packing),
 and a chunk is a hit iff it is a gold paragraph; chunk size cannot
@@ -208,8 +185,7 @@ silently inflate or deflate recall.
 **Validation gate.** Before any HopTrace number is reported, HopTrace's own BM25
 must reproduce the published BM25 baseline on BEIR HotpotQA to within a
 point or two. If it doesn't, the tokenization, chunking, or scoring is
-wrong and every downstream comparison is invalid. A floor you implemented
-yourself isn't a floor until it's been checked against someone else's.
+wrong and every downstream comparison is invalid.
 
 ### The multi-hop diagnostic is answerability-based
 
@@ -232,12 +208,8 @@ This turns the benchmark suite into instrument calibration. The diagnostic
 must independently recover HotpotQA's documented shortcut-proneness (low
 effective multi-hop despite two-paragraph annotations), MuSiQue's genuine
 multi-hop difficulty, and place 2Wiki between them. The per-dataset gap
-between annotated and effective multi-hop is itself a headline
-observation — arguably the most interesting number the harness produces.
-A tool that says "don't use me" on one dataset and "use me" on another is
-far more credible than one that always says use me; when the report says a
-corpus doesn't need hops, that is the diagnostic working correctly, and
-the write-up presents it as calibration, never as concession.
+between annotated and effective multi-hop is the diagnostic's main
+output. Some corpora measure as not needing hops.
 
 Two diagnostics ride along:
 
@@ -247,8 +219,7 @@ Two diagnostics ride along:
   limits), ranking miss (gold was in the candidate pool but fell below k).
   Each is distinguishable because each stage is inspectable — and external
   gold is what makes extraction misses observable at all.
-- **Hop-2 pool precision**, with and without the specificity filter — the
-  hub-entity filter's value is measured, not asserted.
+- **Hop-2 pool precision**, with and without the specificity filter.
 
 ### Self-benchmark (per-corpus diagnostic only)
 
@@ -258,56 +229,58 @@ multi-hop questions by walking real entity bridges between chunks. Gold
 evidence is known by construction and the benchmark regenerates on
 re-ingest.
 
-Its circularity is structural and must be stated: questions are generated
-by walking bridges the extractor already found, so every question is one
-the index can represent — extraction misses are invisible by construction,
-and floor-vs-HopTrace comparisons are biased toward HopTrace. That makes the
-self-benchmark useless as proof and useful as plumbing: an estimate of the
-multi-hop fraction on *your* corpus (sufficiency-based, same definition as
-above: a question is effectively multi-hop only when the floor's top-k
-fails to cover it), a floor-vs-hops sanity check, and a
-regression gate — config or extractor changes re-run the bracket, and
-degradations fail loudly. The bracket report carries this caveat in its
-own output.
+Its circularity is structural: questions are generated by walking bridges
+the extractor already found, so extraction misses are invisible by
+construction and floor-vs-HopTrace comparisons are biased toward
+HopTrace. That makes it unusable as proof and useful as plumbing — an
+estimate of the multi-hop fraction on *your* corpus (sufficiency-based,
+as above), a floor-vs-hops sanity check, and a regression gate where
+config or extractor changes re-run the bracket and degradations fail.
+This caveat is printed in the report.
 
-If the bracket says "94% of questions on your corpus are single-hop and
-BM25 recalls them at 0.97" — use BM25, keep your money. The eval harness
-is the product as much as the retriever is.
+The bracket ends with a verdict derived from its own rows: "effectively
+single-hop: plain BM25 — or any other single-stage retriever — covers
+it; hop retrieval has nothing to do here", or "keep hops on", or "hops do
+not recover them: use BM25 and read the miss breakdown" — prefixed with
+a too-small-to-trust warning under a few hundred chunks.
 
 ## MCP interface
 
 Four tools:
 
 ```
-ingest(source, corpus_id, config?)      → {chunks, entities, table_stats}
-retrieve(query, corpus_id, hops?, k?)   → {evidence: [{chunk, score, path, entities}]}
-explain(chunk_id, corpus_id, query?)    → {why: path + scores + stage trace}
-bracket(corpus_id, n_questions?)        → {floor, hoptrace@1hop, hoptrace@2hop, oracle, multihop_fraction, miss_breakdown}
+ingest(source, corpus_id, config?)             → {chunks, entities, table_stats}
+retrieve(query, corpus_id, hops?, k?, rerank?) → {evidence: [{chunk, score, path, entities}]}
+explain(chunk_id, corpus_id, query?)           → {why: path + scores + stage trace}
+bracket(corpus_id, n_questions?)               → {floor, hoptrace_1hop, hoptrace_2hop, oracle, multihop_fraction, miss_breakdown, caveat}
 ```
 
 The `retrieve` response is designed for the generating model to cite:
-paths are human-readable strings, so "according to [chunk#31], reached via
-Anna → Kowalski" is a one-liner for the assistant to surface.
+paths are human-readable strings that name files, so "according to
+people/marek-sosna.md (chunk#12), reached via Alicja Rud → Marek Sosna"
+is a one-liner for the assistant to surface; `source_root` in the
+response turns the relative file into a link. Each item also lists the
+query words it contains (`matched_terms`), so a lexical-only hit on a
+generic word is visible as such.
 
-## Known limits (stated, not discovered)
+## Known limits
 
-1. **Coreference is out of scope, and that caps multi-hop.** Real documents
+1. **Coreference is out of scope, which caps multi-hop.** Real documents
    write "she reports to the CTO" and "his office is 4B"; bridging those
-   requires judgment, and judgment is exactly what the ingest path refuses
-   to do. Entity-string co-occurrence serves the multi-hop questions whose
-   bridges are *named on both ends*. The external benchmarks measure how
-   much that leaves on the table; the number is reported, not hidden.
+   requires judgment the ingest path refuses to exercise. Entity-string
+   co-occurrence serves multi-hop questions whose bridges are *named on
+   both ends*; the external benchmarks measure what that costs.
 2. **Inflected languages break trivial aliasing.** Case, punctuation and
-   plural normalization does not touch inflection — in Polish, *Kowalski*,
-   *Kowalskiego*, *Kowalskim* and *Kowalskiemu* are one entity and four
-   surface forms that v1 indexes separately. The normalizer is a pluggable
-   interface; a lemmatizing implementation (spaCy or Morfeusz) is the v2
-   fix. Until then HopTrace is honest on English and lossy on inflected
-   languages.
+   plural normalization does not touch inflection — in Polish *Kowalski*,
+   *Kowalskiego*, *Kowalskim* and *Kowalskiemu* are one entity indexed as
+   four. The normalizer is a pluggable interface; a lemmatizing
+   implementation (spaCy or Morfeusz) is the planned fix. Until then
+   HopTrace is accurate on English and lossy on inflected languages.
 
-## V1 scope
+## As built
 
-Python; SQLite; stdio MCP server; zero GPU; zero API keys.
+Python; SQLite; MCP server over stdio or streamable-http; zero GPU; zero
+API keys. v1 delivered:
 
 - chunker + rule-based mention extractor (+ optional spaCy NER flag)
 - mention/co-occurrence tables, trivial alias normalization behind a
@@ -325,96 +298,132 @@ Python; SQLite; stdio MCP server; zero GPU; zero API keys.
 - bracket harness with self-benchmark generation (per-corpus diagnostic)
 - one demo corpus with a written walkthrough of a multi-hop retrieval
 
-Build order is eval-first: the harness and the BM25 floor land before hop
-expansion, so every stage of the build leaves a publishable measurement
-behind — including the failure case, where "measured multi-hop on N
-datasets, here is what one-shot retrieval actually misses" stands on its
-own.
+## Shipped
 
-## V1.5 roadmap (serving adapter)
+**v1 — deterministic retrieval.** Ingest, bounded hop expansion,
+propagated path scoring, per-ring interleave, provenance, the MCP server,
+the eval harness with the BM25 reproduction gate, and the per-corpus
+bracket. Architecture above.
 
-MCP covers agentic harnesses; most deployed consumers are not agentic —
-website chatbots, CMS backends, plain services. V1.5 adds an HTTP adapter
-so those can integrate without an MCP client:
+**v2 — path-aware learned reranker.** MiniLM-class cross-encoder over
+ONNX Runtime behind the `rerank` extra: no torch at inference, no GPU. Trained on MuSiQue and HotpotQA *train*
+splits only, with the wall enforced mechanically — the artifact ships a
+manifest and the eval harness refuses to score any split it lists, any
+manifest that does not describe the graphs beside it, and any artifact
+from a dirty trainer tree (ADR 0011). 2Wiki is held out of training
+entirely and serves as the transfer test. The int8 graph, tokenizer and
+manifest are committed under `models/`; the fp32 graph is a
+checksum-pinned release download; `--rerank` defaults to the bundled
+model. Opt-in (`selection="rerank"`, `--rerank`, MCP `rerank=true`); the
+deterministic interleave remains the default until measurement justifies
+switching, and the full grid in `docs/results.md` reports the deterministic
+2hop row beside every reranked row.
 
-- **FastAPI, same verbs**: `POST /retrieve`, `POST /ingest` (auth-gated,
-  admin), `GET /explain/{chunk_id}`, `POST /bracket`. OpenAPI/Swagger
-  comes free with the framework.
-- **The adoption feature is the response format, not the endpoint**:
-  `format=json` returns structured evidence with paths;
-  `format=prompt` returns a ready-to-concatenate context block — chunks,
-  citations, hop paths rendered as plain text — so the integrator who
-  doesn't want to think does `context = curl(...); prompt = context +
-  user_query;` and ships. Meeting that developer where they are is the
-  product decision.
-- **Provenance survives to the end user**: the JSON carries paths, so a
-  chatbot can render sources under its answer — "according to [doc], via
-  Anna → Kowalski". A bot that shows *why* it said something is a
-  differentiator the client's customers actually see, and the
-  milliseconds-scale hop latency is imperceptible in a chat flow.
-- **No CMS modules**: expose clean HTTP; document the sidecar pattern
-  (one curl example, one PHP-ish snippet) and let any CMS integrate
-  itself. A module is maintenance surface; a pattern is documentation.
-- **Ops minimalism**: API-key header, `corpus_id` multi-tenancy (already
-  in the tool schema), a Dockerfile. Rate limiting and everything else
-  waits for v2.
-- **Structured-source ingest**: CMS backends expose curated metadata —
-  taxonomies, categories, author registries — over JSON APIs. Ingest
-  accepts these as first-class entities alongside extracted mentions:
-  they are the highest-precision bridge entities available (editor-vetted,
-  zero extraction risk), and they double as a fixed coverage universe for
-  bounded selection (see the trilemma qualification above). This is the
-  difference between indexing a CMS and merely indexing its rendered
-  text.
+## Roadmap
 
-## V2 roadmap
+Grouped by what each item changes. Nothing below is built.
 
-- **Learned reranker**: small cross-encoder trained on the external
-  benchmarks — never on self-benchmark labels, which would fit the model
-  to the index's own blind spots; one-hop first, then two-hop. CPU
-  inference.
-- **Lemmatizing normalizer** for inflected languages (spaCy or Morfeusz
-  behind the pluggable alias interface).
+### Retrieval quality
+
+Ordered by the pool oracle's remaining headroom: expansion coverage
+dominates; ranking sits at 95%+ of the ceiling for the candidates it
+sees (docs/results.md, pool oracle).
+
+- **Wider rescoring budget**: `rerank_top_n` is the single largest
+  measured lever on MuSiQue (~10 points of all-recall@20 sit outside the
+  top 50; ~2 on 2Wiki), priced linearly in latency. Needs a sweep.
+- **Marginal-completion selection over learned scores** (ADR 0010 point
+  5, unmeasured): the learned score as the λ no
+  static rule could set. Behind the budget sweep, since plain-sort
+  already reaches 95%+ of the ceiling for scored candidates.
+- **BM25 parameters, train vs product**: the reranker trains and is
+  evaluated on pools seeded with k1=0.9/b=0.4 and is served over pools
+  seeded with the product default 1.5/0.75. Either measure the product
+  setting or make the eval setting the default; both are a re-measurement.
 - **Alias resolution beyond normalization**: locality-sensitive bucketing
   of entity mentions (embedding-hashed, computed at ingest, frozen at
   query time) so paraphrased and abbreviated mentions land in the same
   bucket — extends the exact-match index without putting a model in the
-  query path.
+  query path. `seed_alias` is a named, measured miss category.
+- **Hop-positive reweighting**: training positives are ~17:1 seed-to-hop,
+  and the fine-tune gained more on effectively-single-hop questions than
+  on multi-hop ones. Upweighting hop positives targets that gap.
+- **Best-route admission.** A chunk enters the pool with the first route
+  that reaches it (earliest ring wins), and carries only that route. A
+  generic query word can seed a document that bridges to the target at
+  hop 1 through a weak entity, in which case the strong two-bridge route
+  that also reaches it is never recorded: the chunk ranks as a weak hop-1
+  candidate, and the reranker sees the weak route as its context.
+  Observed on the demo corpus ("In which building does the manager of
+  Alicja Rud sit?" → `building` seeds `budynek-a.md` → `budynek a` →
+  `office-b12.md` at rank 10, while Alicja → Marek Sosna → Office B12
+  exists). Keeping the highest-scoring route per chunk (or all routes for
+  the reranker) is a retrieval change and needs the full eval regenerated.
+- **Lemmatizing normalizer** for inflected languages (spaCy or Morfeusz
+  behind the pluggable alias interface).
+- **Sentence-initial multi-word names.** The trust rule drops an
+  untrusted capitalized opener from a longer run, which is correct for
+  "Yesterday Anna Kowalska" and wrong for a name that only ever opens
+  sentences (indexed as its last token). Candidate fixes: collect
+  multi-word runs in the corpus-wide trust pass, or treat a run of 2+
+  capitalized non-stopword tokens as a name regardless of position.
+  Either changes extraction, so it needs the full eval regenerated
+  before it ships.
+
+### Ingest
+
+Ingest currently reads `.md`, `.markdown`, `.txt` and `.rst`; anything
+else is skipped and listed. That covers documentation repositories and
+exports, and excludes most of what organisations actually store.
+
+- **Document formats**: PDF, DOCX, HTML as first-class inputs. Each is a
+  text-extraction problem with its own failure mode — PDF loses reading
+  order and hyphenates across line breaks, DOCX carries revision markup,
+  HTML carries navigation chrome — and extraction quality feeds straight
+  into entity extraction, so each format needs its own measurement.
+  Extractors belong behind an
+  optional extra (`hoptrace[documents]`), never in the core dependency
+  set.
+- **Structured-source ingest**: CMS backends expose curated metadata —
+  taxonomies, categories, author registries — over JSON APIs. Ingest
+  accepts these as first-class entities alongside extracted mentions:
+  they are editor-vetted, carry zero extraction risk, and supply a fixed
+  coverage universe for bounded selection (see the trilemma
+  qualification above). This is the difference between indexing a CMS and
+  indexing its rendered text.
 - **Incremental ingest** (append without full rebuild), multi-corpus
   routing, entity-page summaries (all chunks for an entity, one call).
 
-## V2.5 roadmap (framework adapters — distribution, not capability)
+### Serving and distribution
 
-Half the integrator market composes retrieval through framework
-interfaces (LangChain `BaseRetriever`, LlamaIndex equivalents) and
-discovers components through those frameworks' integration directories;
-to that market, an engine without a retriever class is invisible
-regardless of quality. The fix is the architecture's existing pattern —
-a third and fourth thin adapter over the same core:
+MCP covers agentic harnesses. Most deployed consumers are not agentic —
+website chatbots, CMS backends, plain services — and half the integrator
+market composes retrieval through framework interfaces.
 
-- **Separate packages, never in core** (`*-langchain`, `*-llamaindex`):
-  framework APIs churn with breaking changes across minor versions;
-  adapters are thin, separately versioned, loosely pinned, so adapter
-  rot stays quarantined from core releases.
-- **Only `retrieve` gets adapted.** Hop paths ride into document
-  metadata (provenance survives the interface); the bracket,
-  calibration, and diagnostics have no framework slot and are not
-  flattened into one. The adapter package README states it plainly:
-  this is the door, the house is over there.
-- **Non-goals clarification**: "no prompt chains, no orchestration"
-  means the engine contains no chain — being a component inside someone
-  else's chain is the intended use, not the sin.
-
-Ships at the announce milestone alongside the HTTP adapter — both are
-distribution surface. Longer-horizon note: MCP adoption is eating the
-integration-directory role, so this gate weakens over time; in the
-meantime the CMS-agency market lives in these frameworks and meeting
-them at their interface costs ~a hundred lines total.
-
-**Release gate**: dissolved by the rename (ADR 0009). The old name (LRAG)
-promised a learned component and gated publication on the v2 reranker;
-HopTrace promises hop retrieval with traces, which v1 delivers in full.
-Publication timing is now a free choice, not a naming obligation.
+- **HTTP adapter (FastAPI), same verbs**: `POST /retrieve`, `POST
+  /ingest` (auth-gated), `GET /explain/{chunk_id}`, `POST /bracket`.
+  OpenAPI comes with the framework.
+- **Response format**: `format=json` returns structured evidence with
+  paths; `format=prompt` returns a ready-to-concatenate context block —
+  chunks, citations and hop paths as plain text — so an integrator can do
+  `context = curl(...); prompt = context + user_query;`. The JSON carries
+  paths, so a chatbot can render sources under its answer ("according to
+  [doc], via Alicja Rud → Marek Sosna").
+- **No CMS modules**: expose HTTP and document the sidecar pattern (one
+  curl example, one PHP-ish snippet).
+- **Ops minimalism**: API-key header, `corpus_id` multi-tenancy (already
+  in the tool schema), a Dockerfile. Rate limiting comes later.
+- **Framework adapters** (`*-langchain`, `*-llamaindex`): thin shims
+  exposing `retrieve` as a `BaseRetriever` (and the LlamaIndex
+  equivalent), in **separate packages, never in core** — framework APIs
+  break across minor versions, so adapter rot stays quarantined and
+  separately versioned. Only `retrieve` is adapted: hop paths ride into
+  document metadata, and the bracket, calibration and diagnostics have no
+  framework slot. "No prompt chains,
+  no orchestration" describes the engine; running as a component inside
+  someone else's chain is an intended use. MCP adoption is eating the
+  integration-directory role over time, but the CMS-agency market lives
+  in these frameworks today.
 
 ## Non-goals
 
@@ -422,23 +431,5 @@ Publication timing is now a free choice, not a naming obligation.
   additional seed source) are expected and supported; the bracket will
   tell you what each source contributes.
 - No agentic orchestration, no query-time LLM calls, no prompt chains.
-  HopTrace is a retrieval engine with a measurement harness, full stop.
 - Not a knowledge graph product. The tables are an index, not an ontology;
   nothing is extracted that requires judgment.
-
-## FAQ
-
-**Why not GraphRAG/LightRAG?** They buy their entity graphs with LLM calls
-at ingest — per-corpus cost, and the graph goes stale. HopTrace's index is
-deterministic: rebuild is free, extraction is versioned, and every edge is
-explainable by pointing at text.
-
-**Why not just BM25?** BM25 is the floor, and HopTrace ships it as the floor.
-What BM25 cannot do is take the second hop — and the bracket measures
-exactly how much that costs on your corpus before you spend anything.
-
-**Where does learning fit, if anywhere?** Selection, in v2. Candidates
-are generated deterministically; a small model orders them. The learning
-is spent on the only stage measured to be genuinely statistical (see the
-trilemma above) — and the name no longer promises it, so v2 remains an
-upgrade, not an IOU.

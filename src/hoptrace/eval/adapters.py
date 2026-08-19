@@ -1,8 +1,5 @@
-"""Per-dataset parsing into a unified question shape.
-
-Adapters validate required keys and fail loudly, citing the file — schema
-drift must never be silently absorbed.
-"""
+"""Per-dataset parsing into a unified question shape; missing keys raise
+``SchemaError`` naming the file."""
 
 from __future__ import annotations
 
@@ -99,38 +96,57 @@ def load_musique(path: Path) -> list[EvalQuestion]:
     """MuSiQue-Ans JSONL: id, question, answer, paragraphs[{idx, title,
     paragraph_text, is_supporting}]. qtype is the hop count from the id
     prefix ("2hop", "3hop", "4hop")."""
-    questions: list[EvalQuestion] = []
     with path.open(encoding="utf-8") as fh:
-        for line_no, line in enumerate(fh, 1):
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            context = f"question at line {line_no}"
-            qid = str(_require(row, "id", path, context))
-            raw_paragraphs = _require(row, "paragraphs", path, context)
-            if not isinstance(raw_paragraphs, list):
-                raise SchemaError(f"{path}: {context} has non-list paragraphs")
-            paragraphs = tuple(
-                Paragraph(
-                    key=(
-                        f"{_require(p, 'idx', path, context)}-{_require(p, 'title', path, context)}"
-                    ),
-                    title=str(_require(p, "title", path, context)),
-                    text=str(_require(p, "paragraph_text", path, context)),
-                    is_gold=bool(_require(p, "is_supporting", path, context)),
-                )
-                for p in raw_paragraphs
+        rows = [json.loads(line) for line in fh if line.strip()]
+    return [_musique_question(row, path, f"question #{i}") for i, row in enumerate(rows)]
+
+
+def load_musique_json(path: Path) -> list[EvalQuestion]:
+    """Same schema as ``load_musique``, as a JSON array (HippoRAG's packaging)."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise SchemaError(f"{path}: expected a top-level list")
+    return [_musique_question(row, path, f"question #{i}") for i, row in enumerate(data)]
+
+
+def load_corpus_entries(path: Path) -> list[tuple[str, str]]:
+    """A JSON array of {title, text}: an explicit retrieval corpus."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise SchemaError(f"{path}: expected a top-level list")
+    entries: list[tuple[str, str]] = []
+    for i, row in enumerate(data):
+        context = f"corpus entry #{i}"
+        entries.append(
+            (
+                str(_require(row, "title", path, context)),
+                str(_require(row, "text", path, context)),
             )
-            questions.append(
-                EvalQuestion(
-                    qid=qid,
-                    text=str(_require(row, "question", path, context)),
-                    answer=str(_require(row, "answer", path, context)),
-                    qtype=qid.split("_", 1)[0].replace("__", ""),
-                    paragraphs=paragraphs,
-                )
-            )
-    return questions
+        )
+    return entries
+
+
+def _musique_question(row: dict[str, object], path: Path, context: str) -> EvalQuestion:
+    qid = str(_require(row, "id", path, context))
+    raw_paragraphs = _require(row, "paragraphs", path, context)
+    if not isinstance(raw_paragraphs, list):
+        raise SchemaError(f"{path}: {context} has non-list paragraphs")
+    paragraphs = tuple(
+        Paragraph(
+            key=f"{_require(p, 'idx', path, context)}-{_require(p, 'title', path, context)}",
+            title=str(_require(p, "title", path, context)),
+            text=str(_require(p, "paragraph_text", path, context)),
+            is_gold=bool(_require(p, "is_supporting", path, context)),
+        )
+        for p in raw_paragraphs
+    )
+    return EvalQuestion(
+        qid=qid,
+        text=str(_require(row, "question", path, context)),
+        answer=str(_require(row, "answer", path, context)),
+        qtype=qid.split("_", 1)[0].replace("__", ""),
+        paragraphs=paragraphs,
+    )
 
 
 def load_hotpot_format(path: Path) -> list[EvalQuestion]:

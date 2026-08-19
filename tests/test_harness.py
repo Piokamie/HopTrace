@@ -36,8 +36,7 @@ def test_beir_floor_finds_gold(beir_store: Store) -> None:
     report = evaluate_beir_floor(beir_store, queries, qrels, ks=(2, 5))
     assert report.n_queries == 2
     assert report.n_chunks == 6
-    # each fixture query lexically reaches one gold paragraph; the second
-    # gold is hop-2 by construction, so the floor recalls exactly half
+    # each query reaches one of its two golds lexically, so the floor recalls half
     assert report.recall_at[5] == pytest.approx(0.5)
     assert report.all_gold_at[5] == 0.0
     assert report.ndcg10 is not None and report.ndcg10 > 0
@@ -67,7 +66,7 @@ def test_report_text_carries_protocol(beir_store: Store) -> None:
 def test_pooled_floor_musique() -> None:
     questions = load_musique(FIXTURES / "musique_dev.jsonl")
     report = evaluate_pooled_floor(questions, dataset="musique", ks=(2, 5))
-    assert report.setting == "pooled"
+    assert report.setting == "pooled-dev"
     assert report.n_queries == 2
     assert report.n_chunks == 6
     assert 0.0 <= report.recall_at[5] <= 1.0

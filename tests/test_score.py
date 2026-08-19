@@ -113,7 +113,7 @@ def test_empty_pool() -> None:
     assert interleave({}, 5) == []
 
 
-# --- interleave (default selection, ADR 0008) ---
+# --- interleave (default selection) ---
 
 
 def hop_ring(chunk_id: int, score: float, hop_n: int) -> Candidate:

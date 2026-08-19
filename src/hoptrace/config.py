@@ -1,8 +1,6 @@
 """Configuration dataclasses and data-directory resolution.
 
-Every tunable that could differ between environments or experiments lives
-here, never as a magic number at a call site. Retrieval defaults are the
-values recorded in eval reports.
+Retrieval defaults are the values recorded in eval reports.
 """
 
 from __future__ import annotations
@@ -19,8 +17,7 @@ _CORPUS_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 class ChunkConfig:
     target_tokens: int = 200
     max_tokens: int = 400
-    #: Eval mode: one document becomes exactly one chunk, no packing or
-    #: splitting, so chunk ids map 1:1 onto source paragraphs (the hit rule).
+    #: Eval mode: one document becomes one chunk, so chunk ids map 1:1 onto paragraphs.
     identity: bool = False
 
 
@@ -40,22 +37,34 @@ class RetrievalConfig:
     beam_entities: int = 8
     #: Per hop, how many reached chunks are kept per followed entity.
     beam_chunks: int = 16
-    #: Per hop, at most this many newly reached chunks (ranked by path
-    #: strength) survive into the pool and the next frontier — bounds the
-    #: candidate pool to "a few hundred" total.
+    #: Per hop, newly reached chunks (by path strength) kept for the pool and next frontier.
     frontier_chunks: int = 64
-    #: Entities mentioned in more than this fraction of chunks are never
-    #: followed. Tuned empirically; see the hub ablation in the eval report.
+    #: Entities mentioned in more than this fraction of chunks are not followed
+    #: (tuned; see the hub ablation in the eval report).
     hub_df_ratio: float = 0.001
-    #: Absolute floor for the hub cutoff: on small corpora the ratio alone
-    #: computes a cap of ~1 chunk and filters every bridge entity.
+    #: Floor for the hub cutoff; on small corpora the ratio alone filters every bridge entity.
     hub_df_floor: int = 10
     #: Ablation switch for the expansion-time specificity filter.
     specificity_filter: bool = True
-    #: Selection policy: "interleave" (measured best, default) or
-    #: "submodular" (experimental; failed first gold-aware validation —
-    #: ADR 0008).
+    #: "interleave" (default), "submodular" (experimental; ADR 0008) or
+    #: "rerank" (cross-encoder over the pool; ADR 0010).
     selection: str = "interleave"
+    #: rerank: pool candidates rescored per query, in interleave order.
+    rerank_top_n: int = 50
+    #: rerank: pairs per ONNX inference batch.
+    rerank_batch: int = 16
+    #: rerank: ONNX intra-op threads; fixed so scores do not vary with core count.
+    rerank_threads: int = 4
+    #: rerank: model directory or registry name; None resolves
+    #: $HOPTRACE_RERANK_MODEL, then the bundled model.
+    rerank_model: str | None = None
+    #: rerank: "fp32" or "int8" (~2× faster at ≤0.005 metric cost); None
+    #: takes the artifact's default.
+    rerank_precision: str | None = None
+    #: rerank ablation: False drops the route-context prefix so the model scores bare text.
+    rerank_path_context: bool = True
+    #: Product BM25 parameters. The eval harness and training pipeline use
+    #: k1=0.9, b=0.4 (published baseline); the skew is noted in DESIGN.md.
     bm25_k1: float = 1.5
     bm25_b: float = 0.75
 
@@ -67,6 +76,11 @@ class RetrievalConfig:
 def data_dir() -> Path:
     """Local data root for corpora and downloaded datasets."""
     return Path(os.environ.get("HOPTRACE_DATA_DIR", ".hoptrace"))
+
+
+def models_dir() -> Path:
+    """Local root for downloaded rerank model artifacts."""
+    return data_dir() / "models"
 
 
 def corpus_path(corpus_id: str) -> Path:

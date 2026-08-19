@@ -1,8 +1,7 @@
 """Alias normalization: maps mention surface forms to canonical entity keys.
 
-`Normalizer` is the pluggable seam where a v2 lemmatizer (spaCy, Morfeusz)
-plugs in. The trivial implementation is deliberately weak on inflected
-languages — see DESIGN.md, known limits.
+``Normalizer`` is the seam for a real lemmatizer; the trivial implementation
+is weak on inflected languages (see DESIGN.md, known limits).
 """
 
 from __future__ import annotations
@@ -23,9 +22,7 @@ _WS_RE = re.compile(r"\s+")
 class TrivialNormalizer:
     """Case, punctuation, possessive, and naive plural normalization.
 
-    The plural rule is a documented approximation: it strips a trailing
-    's' from words of length >= 4 unless they end in 'ss', 'us' or 'is',
-    which over-strips words like 'kansas'. Inflection is untouched.
+    The plural rule over-strips words like 'kansas'; inflection is untouched.
     """
 
     def canonical(self, surface: str) -> str:

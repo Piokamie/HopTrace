@@ -58,8 +58,7 @@ def test_question_mix_and_shapes(store: Store) -> None:
 
 
 def test_multi_hop_is_single_hop_proof(store: Store) -> None:
-    """The defining constraint: the second gold chunk shares NO query
-    lexeme — reachable only over the bridge."""
+    """The second gold chunk shares no query lexeme; it is reachable only over the bridge."""
     questions = [
         q for q in generate_benchmark(store, n_questions=12, seed=0) if q.kind == "multi_hop"
     ]

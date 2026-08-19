@@ -28,7 +28,8 @@ def fixture_datasets(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 def test_eval_musique_pooled(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["eval", "--dataset", "musique"]) == 0
     out = capsys.readouterr().out
-    assert "musique (pooled)" in out
+    assert "musique (pooled-dev)" in out
+    assert "NOT comparable to published open-domain numbers" in out
     assert "recall@" in out
     assert "hit rule" in out
 
@@ -89,8 +90,7 @@ def test_gate_refuses_partial_run(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_gate_on_fixture_fails_honestly(capsys: pytest.CaptureFixture[str]) -> None:
-    # 6-passage fixture cannot hit the published number; the gate must FAIL,
-    # proving it actually compares against the pinned baseline.
+    # the 6-passage fixture cannot reach the published number; the gate still compares to it
     code = cli.main(["eval", "--dataset", "beir-hotpotqa", "--gate"])
     out = capsys.readouterr().out
     assert code in (0, 1)
@@ -133,6 +133,8 @@ def test_ingest_and_retrieve_cli(office: Path, capsys: pytest.CaptureFixture[str
     out = capsys.readouterr().out
     assert "path:" in out
     assert "kowalski" in out
+    assert "(rooms.md)" in out  # the answer chunk's file on its result line
+    assert "terms: " in out  # matched query words beside the score
 
 
 def test_retrieve_json_cli(office: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -173,3 +175,43 @@ def test_serve_registered() -> None:
     # smoke: the subcommand exists and parses (running it would block on stdio)
     with pytest.raises(SystemExit):
         cli.main(["serve", "--help"])
+
+
+def test_retrieve_rerank_without_extra_exits_with_install_hint(
+    office: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hoptrace.rerank as rerank
+
+    def missing() -> tuple[object, object]:
+        raise RuntimeError("reranking requires the rerank extra: install with hoptrace[rerank]")
+
+    monkeypatch.setattr(rerank, "_require_runtime", missing)
+    assert cli.main(["ingest", str(office), "--corpus", "office"]) == 0
+    capsys.readouterr()
+    code = cli.main(["retrieve", "Anna Nowak", "--corpus", "office", "--rerank"])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: ") and "hoptrace[rerank]" in err
+    assert "Traceback" not in err
+
+
+def test_rerank_flags_require_their_switch() -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["retrieve", "q", "--corpus", "office", "--rerank-precision", "int8"])
+    with pytest.raises(SystemExit):
+        cli.main(["retrieve", "q", "--corpus", "office", "--rerank-model", "x"])
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "musique", "--rerank-precision", "fp32"])
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "musique", "--allow-dirty-manifest"])
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "musique", "--rerank-top-n", "0"])
+
+
+def test_eval_rerank_needs_hops_and_hipporag_rejects_pool_flags() -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "musique", "--selection", "rerank"])  # hops 0
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "hipporag-musique", "--corpus-pool", "all"])
+    with pytest.raises(SystemExit):
+        cli.main(["eval", "--dataset", "hipporag-musique", "--setting", "distractor"])

@@ -8,6 +8,7 @@ authors = [
     { name = "Piotr Kamieniecki", email = "piokamie@gmail.com" }
 ]
 requires-python = ">=3.10"
+urls = { Homepage = "https://github.com/Piokamie/HopTrace", Repository = "https://github.com/Piokamie/HopTrace", Changelog = "https://github.com/Piokamie/HopTrace/blob/main/CHANGELOG.md" }
 dependencies = [
     "mcp>=2.0.0",
 ]
@@ -18,6 +19,12 @@ ner = [
 ]
 eval = [
     "numpy>=2.2.6",
+]
+rerank = [
+    # onnxruntime dropped CPython 3.10 wheels after 1.23.x
+    "onnxruntime>=1.20,<1.24; python_version < '3.11'",
+    "onnxruntime>=1.20; python_version >= '3.11'",
+    "tokenizers>=0.20",
 ]
 
 [project.scripts]
@@ -32,6 +39,20 @@ dev = [
     "mypy>=2.3.0",
     "pytest>=9.1.1",
     "ruff>=0.16.2",
+]
+# Reranker fine-tuning (training/, outside the mypy scope). Dev-only by
+# design: inference needs only the rerank extra; torch never reaches a
+# published install. The rerank extra's pins are repeated here because a
+# dependency group cannot reference the project's own extras.
+train = [
+    # torch.onnx.export(dynamo=...) only exists from 2.6
+    "torch>=2.6",
+    "transformers>=4.44",
+    "onnx>=1.16",
+    "onnxruntime>=1.20,<1.24; python_version < '3.11'",
+    "onnxruntime>=1.20; python_version >= '3.11'",
+    "tokenizers>=0.20",
+    "numpy>=2.2.6",
 ]
 
 [tool.ruff]
@@ -50,7 +71,7 @@ strict = true
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = "spacy.*"
+module = ["spacy.*", "onnxruntime.*", "tokenizers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

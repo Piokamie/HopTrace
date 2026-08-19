@@ -1,22 +1,13 @@
-"""Instrument calibration and failure attribution.
+"""Instrument calibration and failure attribution, all LLM-free.
 
-Three diagnostics, all LLM-free:
-
-1. **Effective multi-hop** (hybrid rule, ADR 0004): a question is
-   effectively single-hop when the floor's top-``answer_k`` contains the
-   gold answer span (normalized substring) AND at least one gold
-   paragraph. Yes/no and comparison questions are a separate category —
-   answer-span presence is meaningless for them. The per-dataset gap
-   between annotated and effective multi-hop is a headline observation.
-2. **Miss breakdown** at a given hop setting, per missed gold chunk:
-   ``extraction`` (the gold chunk has no entities in the index — nothing
-   can bridge to it), ``ranking`` (in the candidate pool, below k),
-   ``hop_bound`` (outside the pool but sharing a followable entity with a
-   pool chunk — one more hop or a wider beam would reach it),
-   ``seed_alias`` (no entity path connects it; includes unresolved query
-   mentions).
-3. **Hop-2 pool precision** with/without the specificity filter — the
-   hub-entity filter's value is measured, not asserted.
+Effective multi-hop (hybrid rule, ADR 0004): a question is effectively
+single-hop when the floor's top-``answer_k`` contains the gold answer span
+and at least one gold paragraph; yes/no and comparison questions are
+excluded. Miss breakdown attributes each missed gold chunk to a stage:
+``extraction`` (no entities on the chunk), ``ranking`` (in the pool, below
+k), ``hop_bound`` (outside the pool but sharing a followable entity with a
+pool chunk), ``seed_alias`` (no entity path). Pool precision compares the
+hop-2 pool with the specificity filter on and off.
 """
 
 from __future__ import annotations
@@ -61,8 +52,7 @@ class CalibrationReport:
     n_questions: int
     #: yes/no + comparison questions, excluded from the span rule.
     n_excluded: int
-    #: questions with no answer string in the dataset — reported, never
-    #: silently classified as effective multi-hop.
+    #: questions with no answer string in the dataset
     n_no_answer: int
     n_effective_single_hop: int
     annotated_multihop_fraction: float
@@ -84,13 +74,10 @@ class CalibrationReport:
         )
 
 
-#: Strata for stratified reporting (ADR 0006). ``no_answer`` is its own
-#: stratum so answer-less exports cannot saturate the calibration metric
-#: by leaking into ``effective_multi``.
+#: ``no_answer`` is its own stratum so answer-less exports cannot inflate ``effective_multi``.
 STRATA = ("effective_single", "effective_multi", "excluded", "no_answer")
 
-#: Floor top-k inspected by the hybrid effective-multihop rule (protocol
-#: constant, ADR 0004 — not a tunable).
+#: Floor top-k for the hybrid rule; a protocol constant, not a tunable.
 ANSWER_K = 10
 
 #: k at which miss breakdowns and displacement audits are computed.
@@ -98,8 +85,8 @@ DIAGNOSTIC_K = 20
 
 
 def question_stratum(outcome: QuestionOutcome, answer_k: int = ANSWER_K) -> str:
-    """Hybrid rule (ADR 0004): effectively single-hop iff the floor's
-    top-k contains the answer span AND at least one gold paragraph."""
+    """Effectively single-hop iff the floor's top-k contains the answer
+    span and at least one gold paragraph."""
     if not outcome.answer.strip():
         return "no_answer"
     if outcome.qtype == "comparison" or normalize_span(outcome.answer) in _YES_NO:
@@ -196,10 +183,8 @@ def classify_misses(
 
 @dataclass
 class DisplacementAudit:
-    """Of the top-k slots handed to hop-derived candidates: how many held
-    gold, and how much gold did the evicted seeds hold. Net gold is the
-    interleave's measured value; it directly informs score-aware admission
-    (a hop candidate should clear a bar relative to what it displaces)."""
+    """Gold held by hop-derived top-k slots vs gold in the seeds they evicted;
+    net gold is the interleave's measured value."""
 
     dataset: str
     hops: int

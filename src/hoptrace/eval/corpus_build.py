@@ -1,19 +1,12 @@
 """Corpus builders for the eval harness.
 
-Two scales, two strategies:
-
-- ``build_beir_index`` streams a multi-million-passage BEIR corpus.jsonl in
-  two passes (title trust set, then rows) with bytearray posting
-  accumulators and bulk inserts — ``ingest_documents`` would materialize
-  everything in RAM.
-- ``build_pooled_index`` handles pooled dev-split corpora (tens of
-  thousands of paragraphs) by delegating to ``ingest_documents``.
-
-Both index text as ``title + " " + text`` (the Anserini "flat" condition
-the gate baseline is pinned to) with identity chunking, so chunk ids map
-1:1 onto source paragraphs and the title participates in BM25 — and both
-record the paragraph title as an entity of its chunk, because on
-encyclopedic corpora the title is the name other paragraphs bridge with.
+``build_beir_index`` streams a multi-million-passage BEIR corpus.jsonl with
+packed posting accumulators and bulk inserts; ``ingest_documents`` would
+materialize it all in RAM. The pooled and explicit builders delegate to
+``ingest_documents``. All index ``title + " " + text`` (the Anserini "flat"
+condition) with identity chunking, one chunk per source paragraph, and record
+the title as an entity of its chunk: on encyclopedic corpora the title is the
+name other paragraphs bridge with.
 """
 
 from __future__ import annotations
@@ -64,9 +57,8 @@ def build_beir_index(
     normalizer = TrivialNormalizer()
     extractor = MentionExtractor(ExtractorConfig(), normalizer)
 
-    # Pass A: title words serve as the corpus-wide trust set for the
-    # sentence-initial caps rule — a cheap stand-in for the full
-    # non-initial-caps sweep ingest does.
+    # Pass A: title words as the trust set for the sentence-initial caps rule
+    # (cheaper than the full sweep ingest does).
     title_words: set[str] = set()
     for n_passages, (_, title, _text) in enumerate(iter_beir_corpus(corpus_jsonl), 1):
         if title:
@@ -144,8 +136,7 @@ def build_beir_index(
         )
         avg_len = total_tokens / chunk_id if chunk_id else 0.0
         store = writer.finish(n_chunks=chunk_id, avg_chunk_len=avg_len)
-        # distinct-entity count via SQL rather than an in-RAM set (at
-        # Wikipedia scale the set alone would be gigabytes)
+        # counted in SQL: an in-RAM entity set would be gigabytes at Wikipedia scale
         n_entities = store.table_stats()["entities"]
         store.close()
 
@@ -160,11 +151,37 @@ def build_beir_index(
 @dataclass(frozen=True)
 class PooledIndex:
     store: Store
-    #: chunk_id -> pooled paragraph key (title, text) — deterministic, no
-    #: process-seeded hashing anywhere.
+    #: chunk_id -> pooled paragraph key (title, text)
     chunk_keys: dict[int, tuple[str, str]]
     #: per question: qid -> gold chunk ids
     gold_chunks: dict[str, frozenset[int]]
+
+
+def _check_reuse_analyzer(store: Store, analyzer: str, target: Path) -> None:
+    """A cached index built with another analyzer silently yields near-zero recall."""
+    stored = store.meta("analyzer")
+    if stored is not None and stored != analyzer:
+        store.close()
+        raise ValueError(
+            f"cached index {target} was built with analyzer={stored!r}, run requested"
+            f" {analyzer!r}: delete it or pass the stored analyzer"
+        )
+
+
+def _verify_reuse_mapping(
+    store: Store, docs: Sequence[SourceDocument], path_to_chunk: dict[str, int], target: Path
+) -> None:
+    """Chunk-count equality alone would accept a same-sized cache built from
+    a differently ordered question set and map gold onto the wrong chunks."""
+    for doc in docs:
+        chunk = store.get_chunk(path_to_chunk[doc.path])
+        if chunk.text != doc.text:
+            store.close()
+            raise ValueError(
+                f"cached index {target} does not match this corpus: {doc.path} holds"
+                f" a different paragraph (built from another question set or --limit?)."
+                " Delete the file to rebuild"
+            )
 
 
 def paragraph_pool_key(paragraph: Paragraph) -> tuple[str, str]:
@@ -176,8 +193,13 @@ def build_pooled_index(
     target: Path | None = None,
     analyzer: str = "english",
     progress: Callable[[str], None] | None = None,
+    reuse: bool = False,
 ) -> PooledIndex:
-    """Union of all questions' paragraphs, deduped by (title, text)."""
+    """Union of all questions' paragraphs, deduped by (title, text).
+
+    ``reuse`` opens an existing ``target`` instead of re-ingesting (the
+    all-splits pool is ~100k paragraphs).
+    """
     docs: list[SourceDocument] = []
     key_to_ordinal: dict[tuple[str, str], int] = {}
     for question in questions:
@@ -195,25 +217,35 @@ def build_pooled_index(
     if progress:
         progress(f"pooled corpus: {len(docs)} unique paragraphs")
 
-    store, report = ingest_documents(
-        docs,
-        target,
-        chunk_cfg=ChunkConfig(identity=True),
-        analyzer=analyzer,
-        title_mentions=True,
-    )
-    # The hit rule needs an exact chunk<->paragraph mapping. Never assume
-    # ordinals: ingest silently drops chunk-less documents, so an empty
-    # paragraph would shift every later id and corrupt recall unseen.
-    if report.chunks != len(docs):
+    reused = reuse and target is not None and target.is_file()
+    if reused and target is not None:
+        store = Store.open(target)
+        _check_reuse_analyzer(store, analyzer, target)
+        n_chunks = store.n_chunks
+        if progress:
+            progress(f"reusing pooled index at {target} ({n_chunks:,} chunks)")
+    else:
+        store, report = ingest_documents(
+            docs,
+            target,
+            chunk_cfg=ChunkConfig(identity=True),
+            analyzer=analyzer,
+            title_mentions=True,
+        )
+        n_chunks = report.chunks
+    # ingest drops chunk-less documents, which would shift the ordinals
+    if n_chunks != len(docs):
         store.close()
         raise ValueError(
             f"identity mapping broken: {len(docs)} paragraphs produced"
-            f" {report.chunks} chunks (empty paragraph in the dataset?)"
+            f" {n_chunks} chunks (empty paragraph, or a cached index built"
+            " from a different question set?)"
         )
     path_to_chunk = {
         path: ids[0] for path, ids in store.chunks_by_doc_path([d.path for d in docs]).items()
     }
+    if reused and target is not None:
+        _verify_reuse_mapping(store, docs, path_to_chunk, target)
     ordinal_chunk = {ordinal: path_to_chunk[f"p{ordinal}"] for ordinal in range(len(docs))}
     chunk_keys = {ordinal_chunk[ordinal]: key for key, ordinal in key_to_ordinal.items()}
     gold_chunks = {
@@ -225,6 +257,67 @@ def build_pooled_index(
         for question in questions
     }
     return PooledIndex(store=store, chunk_keys=chunk_keys, gold_chunks=gold_chunks)
+
+
+@dataclass
+class ExplicitIndex:
+    store: Store
+    #: (title, text) -> chunk id
+    key_to_chunk: dict[tuple[str, str], int]
+
+
+def build_explicit_index(
+    entries: Sequence[tuple[str, str]],
+    target: Path | None = None,
+    analyzer: str = "english",
+    progress: Callable[[str], None] | None = None,
+    reuse: bool = False,
+) -> ExplicitIndex:
+    """Index a published corpus given as (title, text) entries."""
+    seen: dict[tuple[str, str], int] = {}
+    docs: list[SourceDocument] = []
+    for title, text in entries:
+        key = (title, text)
+        if key in seen:
+            continue
+        seen[key] = len(docs)
+        docs.append(SourceDocument(path=f"p{len(docs)}", text=flat_text(title, text), title=title))
+    if len(seen) != len(entries) and progress:
+        progress(f"corpus: {len(entries) - len(seen)} duplicate (title, text) entries collapsed")
+    if progress:
+        progress(f"corpus: {len(docs)} passages")
+
+    reused = reuse and target is not None and target.is_file()
+    if reused and target is not None:
+        store = Store.open(target)
+        _check_reuse_analyzer(store, analyzer, target)
+        n_chunks = store.n_chunks
+        if progress:
+            progress(f"reusing index at {target} ({n_chunks:,} chunks)")
+    else:
+        store, report = ingest_documents(
+            docs,
+            target,
+            chunk_cfg=ChunkConfig(identity=True),
+            analyzer=analyzer,
+            title_mentions=True,
+        )
+        n_chunks = report.chunks
+    if n_chunks != len(docs):
+        store.close()
+        raise ValueError(
+            f"identity mapping broken: {len(docs)} passages produced {n_chunks} chunks"
+            " (empty passage, or a cached index built from a different corpus?)"
+        )
+    path_to_chunk = {
+        path: ids[0] for path, ids in store.chunks_by_doc_path([d.path for d in docs]).items()
+    }
+    if reused and target is not None:
+        _verify_reuse_mapping(store, docs, path_to_chunk, target)
+    return ExplicitIndex(
+        store=store,
+        key_to_chunk={key: path_to_chunk[f"p{ordinal}"] for key, ordinal in seen.items()},
+    )
 
 
 def build_question_index(
@@ -258,9 +351,7 @@ def build_question_index(
 
 
 def load_beir_answers(queries_jsonl: Path) -> dict[str, str]:
-    """Answers from BEIR queries metadata when present. Questions with
-    no answer land in the ``no_answer`` stratum — never silently counted
-    as effective multi-hop (see diagnostics.question_stratum)."""
+    """Answers from BEIR queries metadata, where present."""
     answers: dict[str, str] = {}
     with queries_jsonl.open(encoding="utf-8") as fh:
         for line in fh:

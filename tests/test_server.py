@@ -41,8 +41,27 @@ def test_ingest_retrieve_flow(data_dir: Path) -> None:
     item = next(e for e in payload["evidence"] if "Room 4B" in e["chunk"]["text"])
     assert item["hop"] >= 1
     assert "kowalski" in item["path"]
+    # the file is one field away and inside the citation string
+    assert item["chunk"]["doc"].endswith(".md")
+    assert f"({item['chunk']['doc']}:" in item["path"]
+    assert payload["source_root"] == str(data_dir.resolve())
+    assert report["source_root"] == str(data_dir.resolve())
+    explained = server.explain_impl(item["chunk"]["id"], "office")
+    assert explained["source_root"] == str(data_dir.resolve())
+    # the hop-reached answer shares no query words; the seed does
+    assert item["matched_terms"] == []
+    seed = next(e for e in payload["evidence"] if e["hop"] == 0)
+    assert "Anna" in seed["matched_terms"] or "Nowak" in seed["matched_terms"]
     assert item["path_edges"][-1]["entity"] == "kowalski"
     assert isinstance(item["score"]["score"], float)
+
+
+def test_unresolved_mentions_are_called_out(data_dir: Path) -> None:
+    server.ingest_impl(str(data_dir), "office")
+    payload = server.retrieve_impl("where is Zofia Borowska manager", "office")
+    assert payload["unresolved_mentions"] == ["Zofia Borowska"]
+    assert all(e["seed_source"] == "bm25_only" for e in payload["evidence"])
+    assert any('no indexed entity matches "Zofia Borowska"' in n for n in payload["notes"])
 
 
 def test_retrieve_hops_zero_is_floor(data_dir: Path) -> None:

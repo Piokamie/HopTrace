@@ -1,10 +1,7 @@
-"""The per-corpus bracket: floor, HopTrace at hop 1 and 2, oracle, and the
-sufficiency-based multi-hop fraction — measured on the corpus's own
-self-benchmark.
-
-Diagnostic, never evidence (ADR 0004): the caveat is part of the report
-payload itself, not just documentation. Externally-validated numbers live
-in docs/results.md.
+"""Per-corpus bracket: BM25 floor, HopTrace at 1 and 2 hops, oracle, and
+the multi-hop fraction, measured on the corpus's own self-benchmark.
+Diagnostic only (ADR 0004); externally validated numbers live in
+docs/results.md.
 """
 
 from __future__ import annotations
@@ -45,15 +42,16 @@ class BracketReport:
     k: int
     seed: int
     rows: list[SystemRow]
-    #: fraction of questions whose full gold set fits within k — the best
-    #: any retriever could score at all-gold@k (LLM-free ceiling, ADR 0003)
+    #: fraction of questions whose gold set fits within k: the all-gold@k ceiling
     oracle: float
-    #: sufficiency-based: fraction of questions the floor's top-k fails to
-    #: fully cover
+    #: fraction of questions the floor's top-k fails to fully cover
     multihop_fraction: float
     miss_breakdown: dict[str, int]
     caveat: str = CAVEAT
     notes: list[str] = field(default_factory=list)
+    #: one of VERDICTS, derived from the rows; ``verdict`` is the sentence
+    verdict_code: str = ""
+    verdict: str = ""
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
@@ -74,8 +72,56 @@ class BracketReport:
         misses = ", ".join(f"{kind}={self.miss_breakdown[kind]}" for kind in MISS_KINDS)
         lines.append(f"  misses at 2hop: {misses}")
         lines.extend(f"  note: {note}" for note in self.notes)
+        lines.append(f"  VERDICT: {self.verdict}")
         lines.append(f"  CAVEAT: {self.caveat}")
         return "\n".join(lines)
+
+
+#: Thresholds behind the verdict. Small and arbitrary on purpose: the bracket
+#: is a plumbing check, so the verdict only states what the rows already show.
+MIN_MULTIHOP_FRACTION = 0.10
+MIN_HOP_GAIN = 0.05
+MIN_CHUNKS_FOR_STABLE_VERDICT = 200
+
+VERDICTS = ("single_hop", "multi_hop", "hops_do_not_help", "unstable")
+
+
+def verdict_for(
+    rows: list[SystemRow], multihop_fraction: float, k: int, corpus_chunks: int
+) -> tuple[str, str]:
+    """(code, sentence). Decided from the floor-vs-hop rows and the
+    multi-hop fraction; says so when the corpus is too small to trust."""
+    floor = rows[0]
+    best = max(rows[1:], key=lambda r: (r.all_gold, r.recall))
+    gain = best.all_gold - floor.all_gold
+    pct = round(100 * multihop_fraction)
+    if corpus_chunks < MIN_CHUNKS_FOR_STABLE_VERDICT:
+        size = (
+            f"{corpus_chunks} chunks is too few for a stable reading (the fraction swings"
+            f" with -n); indicative only: "
+        )
+    else:
+        size = ""
+    if multihop_fraction < MIN_MULTIHOP_FRACTION and gain < MIN_HOP_GAIN:
+        return "unstable" if size else "single_hop", (
+            f"{size}{pct}% of generated questions need more than the BM25 floor and hops"
+            f" add {gain:+.2f} all-gold@{k}. This corpus is effectively single-hop:"
+            " plain BM25 — or any other single-stage retriever — covers it; hop"
+            " retrieval has nothing to do here."
+        )
+    if gain < MIN_HOP_GAIN:
+        return "unstable" if size else "hops_do_not_help", (
+            f"{size}{pct}% of generated questions need more than the floor, but hops do"
+            f" not recover them ({best.system} all-gold@{k} {best.all_gold:.2f} vs floor"
+            f" {floor.all_gold:.2f}). Use BM25 and read the miss breakdown:"
+            " the bridges are not entity-shaped, or not extracted."
+        )
+    return "unstable" if size else "multi_hop", (
+        f"{size}{pct}% of generated questions need more than the BM25 floor, and"
+        f" {best.system} lifts all-gold@{k} from {floor.all_gold:.2f} to {best.all_gold:.2f}"
+        f" ({gain:+.2f}). Entity-bridged multi-hop is real on this corpus; keep hops on"
+        f" ({best.system})."
+    )
 
 
 def run_bracket(
@@ -125,6 +171,8 @@ def run_bracket(
     notes = []
     if len(questions) < n_questions:
         notes.append(f"corpus supported only {len(questions)} of {n_questions} requested questions")
+    multihop_fraction = insufficient / len(questions)
+    code, sentence = verdict_for(rows, multihop_fraction, k, store.n_chunks)
     return BracketReport(
         corpus_chunks=store.n_chunks,
         n_questions=len(questions),
@@ -134,9 +182,11 @@ def run_bracket(
         seed=seed,
         rows=rows,
         oracle=sum(1 for q in questions if len(q.gold) <= k) / len(questions),
-        multihop_fraction=insufficient / len(questions),
+        multihop_fraction=multihop_fraction,
         miss_breakdown=dict(misses.misses),
         notes=notes,
+        verdict_code=code,
+        verdict=sentence,
     )
 
 

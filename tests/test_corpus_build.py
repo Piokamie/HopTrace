@@ -108,3 +108,31 @@ def test_analyzer_recorded(tmp_path: Path, analyzer: str) -> None:
     store = Store.open(target)
     assert store.meta("analyzer") == analyzer
     store.close()
+
+
+def test_pooled_index_reuse_verifies_paragraph_identity(tmp_path: Path) -> None:
+    """A cached pooled index is reused only if every ordinal holds the expected paragraph."""
+    questions = load_musique(FIXTURES / "musique_dev.jsonl")
+    target = tmp_path / "pool.sqlite"
+    first = build_pooled_index(questions, target=target, analyzer="english")
+    first.store.close()
+    again = build_pooled_index(questions, target=target, analyzer="english", reuse=True)
+    assert again.gold_chunks == first.gold_chunks
+    again.store.close()
+    # same paragraphs, different question order → different ordinals
+    reordered = list(reversed(questions))
+    with pytest.raises(ValueError, match="does not match this corpus"):
+        build_pooled_index(reordered, target=target, analyzer="english", reuse=True)
+
+
+def test_explicit_index_reuse_verifies_passage_identity(tmp_path: Path) -> None:
+    from hoptrace.eval.corpus_build import build_explicit_index
+
+    entries = [("A", "alpha text"), ("B", "beta text"), ("C", "gamma text")]
+    target = tmp_path / "explicit.sqlite"
+    build_explicit_index(entries, target=target, analyzer="english").store.close()
+    reused = build_explicit_index(entries, target=target, analyzer="english", reuse=True)
+    assert set(reused.key_to_chunk) == set(entries)
+    reused.store.close()
+    with pytest.raises(ValueError, match="does not match this corpus"):
+        build_explicit_index(list(reversed(entries)), target=target, analyzer="english", reuse=True)

@@ -1,8 +1,7 @@
 """Ingest pipeline: documents → chunks → mentions → tables. No LLM.
 
-Chunk and posting writes are batched per document; postings accumulate
-in memory and are flushed once at the end. Corpus-scale builders (the eval
-harness) drive the same ``StoreWriter`` API shard by shard.
+Postings accumulate in memory and are flushed once at the end; corpus-scale
+builders drive ``StoreWriter`` directly, shard by shard.
 """
 
 from __future__ import annotations
@@ -47,18 +46,17 @@ def ingest_documents(
     normalizer: Normalizer | None = None,
     analyzer: str = "simple",
     title_mentions: bool = False,
+    source_root: str | None = None,
 ) -> tuple[Store, IngestReport]:
     """Build a corpus from documents; ``target=None`` builds in memory.
 
-    Two passes: the first chunks everything and collects corpus-wide
-    evidence of non-sentence-initial capitalization, the second extracts
-    mentions with that evidence (so "Kowalski sits in 4B." keeps its
-    sentence-initial name when Kowalski appears mid-sentence anywhere else).
+    Two passes: chunk everything and collect corpus-wide non-sentence-initial
+    capitalization, then extract mentions with that evidence, so a
+    sentence-initial name is kept if it appears mid-sentence anywhere.
 
     ``title_mentions`` indexes each document's title as an entity of its
-    first chunk (span ``(-1, -1)``) and trusts title words corpus-wide —
-    for encyclopedic corpora where the title *is* the entity a paragraph
-    is about and other paragraphs bridge to it by name.
+    first chunk (span ``(-1, -1)``) and trusts title words corpus-wide, for
+    encyclopedic corpora where the title is the entity a paragraph is about.
     """
     chunk_cfg = chunk_cfg or ChunkConfig()
     extractor_cfg = extractor_cfg or ExtractorConfig()
@@ -88,6 +86,8 @@ def ingest_documents(
     with StoreWriter(target) as writer:
         writer.set_meta("extractor_version", EXTRACTOR_VERSION)
         writer.set_meta("analyzer", analyzer)
+        if source_root is not None:
+            writer.set_meta("source_root", source_root)
         writer.set_meta_json(
             "config",
             {"chunk": vars(chunk_cfg), "extractor": vars(extractor_cfg), "analyzer": analyzer},
@@ -159,7 +159,13 @@ def ingest_path(
         raise ValueError(f"no ingestable text files under {source}")
 
     store, report = ingest_documents(
-        docs, corpus_path(corpus_id), chunk_cfg, extractor_cfg, normalizer, analyzer=analyzer
+        docs,
+        corpus_path(corpus_id),
+        chunk_cfg,
+        extractor_cfg,
+        normalizer,
+        analyzer=analyzer,
+        source_root=str(source.resolve()),
     )
     return store, IngestReport(
         documents=report.documents,

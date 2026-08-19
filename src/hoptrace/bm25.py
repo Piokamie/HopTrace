@@ -1,14 +1,9 @@
-"""Okapi BM25 over packed SQLite postings.
+"""Okapi BM25 (Lucene variant) over packed SQLite postings.
 
-Two paths share one formula: ``Bm25`` accumulates in Python dicts (fine up
-to tens of thousands of chunks — the MCP retrieval path), ``Bm25Vector``
-decodes posting blobs into numpy arrays (the corpus-scale eval path; numpy
-comes from the ``eval`` extra).
-
-Formula (Lucene variant): idf = ln(1 + (N - df + 0.5) / (df + 0.5)),
-tf part = tf * (k1 + 1) / (tf + k1 * (1 - b + b * dl / avgdl)), where dl is
-the *analyzed* term count of the chunk (``chunk_terms``), not the raw token
-count. Parameters are recorded in every eval report.
+``Bm25`` accumulates in Python dicts (the MCP path, small corpora);
+``Bm25Vector`` decodes posting blobs into numpy arrays (the eval path; numpy
+comes from the ``eval`` extra). Document length is the analyzed term count
+(``chunk_terms``), not the raw token count.
 """
 
 from __future__ import annotations
@@ -66,7 +61,7 @@ class Bm25:
     def explain(self, terms: Sequence[str], chunk_id: int) -> list[TermScore]:
         dl = self._store.term_count(chunk_id)
         result: list[TermScore] = []
-        for term in dict.fromkeys(terms):  # preserve order, dedupe
+        for term in dict.fromkeys(terms):
             df = self._store.term_df(term)
             w = idf(self._n, df) if df else 0.0
             tf = next((tf for cid, tf in self._store.postings(term) if cid == chunk_id), 0)
@@ -106,8 +101,8 @@ class Bm25Vector:
         self._dtype = np.dtype(_NP_POSTING_DTYPE_FIELDS)
 
     def scores_for(self, terms: Sequence[str], chunk_ids: Sequence[int]) -> dict[int, float]:
-        """BM25 for exactly the given chunks (postings are chunk-id sorted,
-        so each term is one binary search, not a full decode-and-scan)."""
+        """BM25 for exactly the given chunks; postings are chunk-id sorted, so
+        each term is one binary search."""
         np = self._np
         wanted = np.array(sorted(set(chunk_ids)), dtype=np.int64)
         if wanted.size == 0:
@@ -152,9 +147,8 @@ class Bm25Vector:
         if candidates == 0:
             return [], 0
         k = min(k, candidates)
-        # argpartition picks an arbitrary subset among chunks tied exactly
-        # at the k-th score; re-rank the whole boundary tie class so both
-        # scorer paths agree on the deterministic (-score, chunk_id) order.
+        # argpartition breaks k-th-score ties arbitrarily; re-rank the boundary
+        # tie class for a deterministic (-score, chunk_id) order.
         rough = np.argpartition(-scores, k - 1)[:k]
         boundary = scores[rough].min()
         contenders = np.flatnonzero(scores >= boundary)

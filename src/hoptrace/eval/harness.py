@@ -1,23 +1,21 @@
 """Budget-matched evaluation runner and metrics.
 
 Every compared system returns the same k; every report carries candidates
-examined and wall-clock latency next to recall, plus the hit rule and the
-BM25 parameters used. Metrics are macro-averaged over queries.
-
-Hit rule (printed in every report): eval indexing is identity-preserving —
-one source paragraph is one chunk (indexed as "title text") — and a
-retrieved chunk is a hit iff it is a gold paragraph.
+examined, latency, the hit rule and the BM25 parameters next to recall.
+Metrics are macro-averaged over queries.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 import statistics
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from hoptrace.bm25 import Bm25, Bm25Vector
 from hoptrace.config import RetrievalConfig
@@ -31,14 +29,14 @@ from hoptrace.eval.diagnostics import (
     audit_displacement,
     classify_misses,
 )
+from hoptrace.rerank import ResolvedModel, resolve_model, sha256_of, window_size
 from hoptrace.retrieve import Retriever
 from hoptrace.store import Store
 from hoptrace.tokenize import analyze
 
 
 def _check_analyzer(store: Store, analyzer: str) -> None:
-    """A mismatched analyzer yields silently near-zero recall — the CLI
-    guards its own path; library callers get the same guard here."""
+    """A mismatched analyzer yields silently near-zero recall."""
     stored = store.meta("analyzer")
     if stored is not None and stored != analyzer:
         raise ValueError(
@@ -52,21 +50,156 @@ HIT_RULE = (
     " as 'title text'); a retrieved chunk is a hit iff it is a gold paragraph"
 )
 
+#: Transfer holdouts: excluded from training entirely (ADR 0011).
+HOLDOUT_DATASETS = ("2wiki",)
+
+#: eval dataset -> (manifest dataset name, split) the training wall guards.
+EVAL_SPLITS: dict[str, tuple[str, str]] = {
+    "beir-hotpotqa": ("hotpotqa", "test"),
+    "musique": ("musique", "dev"),
+    "2wiki": ("2wiki", "dev"),
+    # HippoRAG samples from the validation sets, so these are dev.
+    "hipporag-musique": ("musique", "dev"),
+    "hipporag-2wiki": ("2wiki", "dev"),
+}
+
+
+class TrainingWallError(RuntimeError):
+    """The model under evaluation was trained on the split being evaluated."""
+
+
+def _norm_name(name: object) -> str:
+    """Normalize a manifest dataset name: '2wiki', '2WikiMultihopQA', 'hipporag-2wiki' all match."""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
+def check_training_wall(dataset: str, model: ResolvedModel, allow_dirty: bool = False) -> str:
+    """Training-data wall: refuse a rerank model whose manifest lists the
+    split under evaluation or any holdout dataset; a missing manifest is
+    refused too. Returns a one-line provenance note for the report."""
+    if model.is_zero_shot():
+        return (
+            f"rerank model {model.label}: zero-shot base (MS MARCO), no benchmark"
+            " training; wall not applicable"
+        )
+    manifest_path = model.manifest
+    if not manifest_path.is_file():
+        raise TrainingWallError(
+            f"no manifest.json inside {model.path}: cannot verify the training-data"
+            " wall (ADR 0011); refusing to evaluate a rerank model of unknown provenance"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise TrainingWallError(f"{manifest_path} is not a JSON object; refusing")
+    if dataset not in EVAL_SPLITS:
+        raise TrainingWallError(
+            f"no training-wall mapping for dataset {dataset!r}: refusing rather than"
+            f" evaluating unguarded (known: {sorted(EVAL_SPLITS)})"
+        )
+    eval_dataset, eval_split = EVAL_SPLITS[dataset]
+    trained_on = manifest.get("trained_on")
+    if not isinstance(trained_on, list) or not trained_on:
+        raise TrainingWallError(
+            f"{manifest_path} declares no trained_on sources: an artifact that cannot"
+            " say what it learned from cannot be cleared; refusing"
+        )
+    holdout_keys = {_norm_name(h) for h in HOLDOUT_DATASETS}
+    for source in trained_on:
+        if not isinstance(source, dict) or "dataset" not in source or "split" not in source:
+            raise TrainingWallError(
+                f"{manifest_path}: every trained_on entry must be an object with"
+                f" 'dataset' and 'split'; got {source!r}; refusing"
+            )
+        name = _norm_name(source["dataset"])
+        # A holdout in training voids the transfer claim for every dataset; match loosely.
+        if any(key in name for key in holdout_keys):
+            raise TrainingWallError(
+                f"training-data wall (ADR 0011): {source['dataset']!r} is a declared"
+                f" holdout yet appears in trained_on of {manifest_path}"
+                f" (split {source['split']!r}); refusing"
+            )
+        if name == _norm_name(eval_dataset) and source["split"] == eval_split:
+            raise TrainingWallError(
+                f"training-data wall (ADR 0011): {manifest_path} lists"
+                f" {eval_dataset}/{eval_split} as training data — this evaluation would be"
+                " circular; refusing"
+            )
+    _verify_manifest_files(model, manifest)
+    commit = str(manifest.get("trainer_commit", "unknown"))
+    dirty = bool(manifest.get("dirty")) or commit.endswith("-dirty")
+    if dirty and not allow_dirty:
+        raise TrainingWallError(
+            f"{manifest_path} was written from a dirty trainer tree ({commit}): the"
+            " artifact is not reproducible from any commit. Pass --allow-dirty-manifest"
+            " to score it anyway (the report will say so)"
+        )
+    trained = ", ".join(f"{s['dataset']}/{s['split']}" for s in trained_on)
+    # Kept-gold models pass the wall; the note has to flag them.
+    exclusion = manifest.get("exclusion")
+    if isinstance(exclusion, dict):
+        provenance = (
+            "eval-gold excluded from training"
+            f" ({exclusion.get('eval_gold_passages_excluded', '?')} passages)"
+        )
+    else:
+        provenance = "EXCLUSION NOT APPLIED — trained on evaluation gold passages; NOT PUBLISHABLE"
+    note = (
+        f"rerank model {manifest.get('model', model.path.name)} ({model.precision}):"
+        f" base {manifest.get('base_model')}, trained on [{trained}], trainer {commit};"
+        f" wall verified for {eval_dataset}/{eval_split}; {provenance}"
+    )
+    if dirty:
+        note += "; DIRTY TRAINER TREE — not reproducible; NOT PUBLISHABLE"
+    return note
+
+
+def _verify_manifest_files(model: ResolvedModel, manifest: dict[str, Any]) -> None:
+    """A clean manifest copied next to a different model.onnx must not clear the wall."""
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise TrainingWallError(
+            f"{model.manifest} records no file checksums ('files'); cannot bind the"
+            " manifest to the artifact; refusing"
+        )
+    checked = 0
+    for name, expected in files.items():
+        path = model.path / str(name)
+        if not path.is_file():
+            continue
+        actual = sha256_of(path)
+        if actual != expected:
+            raise TrainingWallError(
+                f"{model.manifest} does not describe {path.name}: manifest sha256"
+                f" {expected}, file {actual}; refusing"
+            )
+        checked += 1
+    if model.graph.name not in files:
+        raise TrainingWallError(
+            f"{model.manifest} does not list the graph being scored ({model.graph.name}); refusing"
+        )
+    if checked == 0:
+        raise TrainingWallError(f"{model.manifest}: none of the listed files are present; refusing")
+
 
 @dataclass
 class LatencyStats:
     median_ms: float
     p95_ms: float
+    #: how the latency was measured; printed alongside it
+    conditions: str = "single-threaded, warm"
 
     @classmethod
-    def from_seconds(cls, samples: Sequence[float]) -> LatencyStats:
+    def from_seconds(
+        cls, samples: Sequence[float], conditions: str = "single-threaded, warm"
+    ) -> LatencyStats:
         if not samples:
-            return cls(median_ms=0.0, p95_ms=0.0)
+            return cls(median_ms=0.0, p95_ms=0.0, conditions=conditions)
         ordered = sorted(samples)
         p95_index = min(len(ordered) - 1, math.ceil(0.95 * len(ordered)) - 1)
         return cls(
             median_ms=statistics.median(ordered) * 1000.0,
             p95_ms=ordered[p95_index] * 1000.0,
+            conditions=conditions,
         )
 
 
@@ -96,9 +229,11 @@ class FloorReport:
     candidates_median: float
     latency: LatencyStats
     notes: list[str] = field(default_factory=list)
-    #: metrics split by effective-hop stratum — one aggregate number
-    #: cannot summarize a corpus that is one-third single-hop.
+    #: metrics per effective-hop stratum
     strata: dict[str, StratumMetrics] | None = None
+    #: oracle ceiling per candidate set: "pool" = every candidate reached,
+    #: "scored" = the top-N the reranker sees
+    oracle: dict[str, StratumMetrics] | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
@@ -124,13 +259,28 @@ class FloorReport:
                     for k in sorted(metrics.recall_at)
                 )
                 lines.append(f"stratum {name} (n={metrics.n_queries}): {per_k}")
+        if self.oracle:
+            lines.append("pool oracle (ceiling for any selection over the generated pool):")
+            for name in sorted(self.oracle):
+                metrics = self.oracle[name]
+                per_k = "   ".join(
+                    f"r@{k}: {metrics.recall_at[k]:.4f} ag@{k}: {metrics.all_gold_at[k]:.4f}"
+                    for k in sorted(metrics.recall_at)
+                )
+                lines.append(f"  {name:<8} {per_k}")
+                achieved = "   ".join(
+                    f"r@{k}: {_pct(self.recall_at[k], metrics.recall_at[k])}"
+                    f" ag@{k}: {_pct(self.all_gold_at[k], metrics.all_gold_at[k])}"
+                    for k in sorted(metrics.recall_at)
+                )
+                lines.append(f"  {'of ' + name:<8} {achieved}")
         lines.append(
             f"candidates examined: mean {self.candidates_mean:,.0f},"
             f" median {self.candidates_median:,.0f}"
         )
         lines.append(
             f"latency per query: median {self.latency.median_ms:.1f} ms,"
-            f" p95 {self.latency.p95_ms:.1f} ms (single-threaded, warm)"
+            f" p95 {self.latency.p95_ms:.1f} ms ({self.latency.conditions})"
         )
         lines.extend(f"note: {note}" for note in self.notes)
         return "\n".join(lines)
@@ -303,7 +453,7 @@ def evaluate_pooled_floor(
         pooled.store,
         query_gold,
         dataset,
-        setting="pooled",
+        setting="pooled-dev",
         analyzer=analyzer,
         k1=k1,
         b=b,
@@ -426,10 +576,18 @@ def evaluate_hoptrace(
     misses: MissBreakdown | None = None,
     strata: dict[str, str] | None = None,
     displacement: DisplacementAudit | None = None,
+    allow_dirty: bool = False,
 ) -> FloorReport:
     """Budget-matched HopTrace run at a given hop count over prebuilt gold."""
     base = cfg or RetrievalConfig()
     run_cfg = replace(base, hops=hops, k=max(ks))
+    wall_notes: list[str] = []
+    resolved: ResolvedModel | None = None
+    if run_cfg.selection == "rerank":
+        # resolve here so an $HOPTRACE_RERANK_MODEL override cannot inherit
+        # the base model's exemption
+        resolved = resolve_model(run_cfg.rerank_model, run_cfg.rerank_precision)
+        wall_notes.append(check_training_wall(dataset, resolved, allow_dirty=allow_dirty))
     retriever = Retriever(store, run_cfg)
     if limit is not None:
         query_gold = query_gold[:limit]
@@ -439,6 +597,7 @@ def evaluate_hoptrace(
     candidate_counts: list[int] = []
     latencies: list[float] = []
     stratified = _StratifiedAccumulator(ks) if strata is not None else None
+    oracle_acc = _StratifiedAccumulator(ks)
 
     for i, qg in enumerate(query_gold, 1):
         started = time.perf_counter()
@@ -449,6 +608,16 @@ def evaluate_hoptrace(
         for k in ks:
             recalls[k].append(recall[k])
             all_golds[k].append(all_gold[k])
+        oracle_acc.add(
+            "pool", *_recall_metrics(_oracle_order(result.pool_order, qg.gold), qg.gold, ks)
+        )
+        if run_cfg.selection == "rerank":
+            # interleave and submodular range over the whole pool; only rerank has a scored window
+            scored_n = window_size(run_cfg.rerank_top_n, max(ks))
+            oracle_acc.add(
+                "scored",
+                *_recall_metrics(_oracle_order(result.pool_order[:scored_n], qg.gold), qg.gold, ks),
+            )
         if stratified is not None and strata is not None:
             stratified.add(strata.get(qg.qid, "unknown"), recall, all_gold)
         candidate_counts.append(result.candidates_examined)
@@ -461,18 +630,30 @@ def evaluate_hoptrace(
         if progress and i % 200 == 0:
             progress(f"{i}/{len(query_gold)} queries (hops={hops})")
 
+    selection_note = {
+        "interleave": "selection=interleave (ADR 0006/0008)",
+        "submodular": "selection=submodular (experimental, ADR 0008)",
+        "rerank": (
+            f"selection=rerank top_n={run_cfg.rerank_top_n}"
+            f" model={resolved.label if resolved is not None else '?'}"
+            f"{'' if run_cfg.rerank_path_context else ' PATH-CONTEXT OFF (ablation)'}"
+            " (ADR 0012)"
+        ),
+    }[run_cfg.selection]
     notes = [
         f"retrieval config: hops={hops}, beam_entities={run_cfg.beam_entities},"
         f" beam_chunks={run_cfg.beam_chunks}, frontier_chunks={run_cfg.frontier_chunks},"
         f" hub_df_ratio={run_cfg.hub_df_ratio}, specificity_filter={run_cfg.specificity_filter},"
-        " scoring=propagated+interleave (ADR 0005)"
+        f" scoring=propagated (ADR 0005), {selection_note}",
+        *wall_notes,
     ]
     if limit is not None:
         notes.append(f"limited to first {limit} queries — NOT the reportable number")
+    is_rerank = run_cfg.selection == "rerank"
     return FloorReport(
         dataset=dataset,
         setting=setting,
-        system=f"hoptrace@{hops}hop",
+        system=f"hoptrace@{hops}hop{'+rerank' if is_rerank else ''}",
         n_queries=len(query_gold),
         n_chunks=store.n_chunks,
         analyzer=store.meta("analyzer") or "simple",
@@ -483,9 +664,15 @@ def evaluate_hoptrace(
         ndcg10=None,
         candidates_mean=_mean([float(c) for c in candidate_counts]),
         candidates_median=float(statistics.median(candidate_counts)) if candidate_counts else 0.0,
-        latency=LatencyStats.from_seconds(latencies),
+        latency=LatencyStats.from_seconds(
+            latencies,
+            f"ONNX {run_cfg.rerank_threads} intra-op threads, tokenizer single-threaded, warm"
+            if is_rerank
+            else "single-threaded, warm",
+        ),
         notes=notes,
         strata=stratified.result() if stratified is not None else None,
+        oracle=oracle_acc.result(),
     )
 
 
@@ -531,10 +718,8 @@ def write_report(report: FloorReport, json_path: Path | None) -> None:
 
 
 def _doc_id_to_chunk_map(store: Store, qrels: dict[str, set[str]]) -> dict[str, int]:
-    """Reverse map for exactly the gold doc ids (small), not all 5M.
-
-    BEIR indexing is identity-preserving, so each doc has exactly one chunk.
-    """
+    """Reverse map for the gold doc ids only; BEIR indexing is identity-preserving,
+    one chunk per doc."""
     wanted = {doc_id for gold in qrels.values() for doc_id in gold}
     return {
         path: chunk_ids[0] for path, chunk_ids in store.chunks_by_doc_path(sorted(wanted)).items()
@@ -543,3 +728,14 @@ def _doc_id_to_chunk_map(store: Store, qrels: dict[str, set[str]]) -> dict[str, 
 
 def _mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def _oracle_order(candidates: Sequence[int], gold: frozenset[int] | set[int]) -> list[int]:
+    """Best-case ordering of a candidate list: its gold members first."""
+    hits = [cid for cid in candidates if cid in gold]
+    return hits + [cid for cid in candidates if cid not in gold]
+
+
+def _pct(achieved: float, ceiling: float) -> str:
+    """Fraction of the ceiling reached; undefined when the ceiling is 0."""
+    return "n/a" if ceiling <= 0 else f"{100.0 * achieved / ceiling:5.1f}%"

@@ -1,15 +1,7 @@
-"""Selection over the expanded candidate pool.
-
-Two strategies (RetrievalConfig.selection):
-
-- ``interleave`` (default; ADR 0006/0008): deterministic interleave of
-  seeds and hop rings, each queue in its own population-native order.
-- ``submodular`` (experimental; ADR 0007/0008): greedy relevance ×
-  novelty over coverage features — failed its first gold-aware
-  validation and is retained behind a switch for measurement only.
-
-No learned parts in v1 — the v2 reranker replaces exactly this admission
-decision, never the candidate generation.
+"""Selection over the expanded candidate pool: ``interleave`` (default;
+deterministic merge of seeds and hop rings) and ``submodular`` (experimental;
+greedy relevance × novelty over coverage features, kept behind a switch for
+measurement — ADR 0008).
 """
 
 from __future__ import annotations
@@ -76,15 +68,10 @@ class Selected:
 def candidate_features(
     candidate: Candidate, chunk_terms: frozenset[str], query_terms: frozenset[str]
 ) -> frozenset[Feature]:
-    """Coverage features: query terms present in the chunk + entities on
-    the candidate's hop path.
+    """Coverage features: query terms present in the chunk + entities on the hop path.
 
-    Known limitation (ADR 0008): path-entity features are minted by the
-    candidate pool itself, so the universe is unbounded and distinct junk
-    routes each earn novelty — measured to flood the list. Query-anchored
-    variants starve genuinely multi-hop targets (which contain no query
-    content by construction). This is why submodular selection is
-    experimental, not the default.
+    Path-entity features are minted by the pool itself, so distinct junk routes
+    each earn novelty; query-anchored variants starve true multi-hop targets.
     """
     terms = {("term", t) for t in chunk_terms & query_terms}
     entities = {("ent", e.entity) for e in candidate.path.edges if e.entity}

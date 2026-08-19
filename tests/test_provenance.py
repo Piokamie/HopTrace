@@ -30,6 +30,19 @@ def test_render_matches_design_format() -> None:
     )
 
 
+def test_render_names_source_files_when_known() -> None:
+    snippets = {12: "Anna reports to Kowalski", 31: "Kowalski sits in 4B"}
+    docs = {12: "people/anna.md", 31: "rooms/4b.md"}
+    assert render_path(path_two_hop(), snippets, docs) == (
+        'query:"Anna" → chunk#12 (people/anna.md: "Anna reports to Kowalski")'
+        ' → entity:"kowalski" → chunk#31 (rooms/4b.md: "Kowalski sits in 4B")'
+    )
+    # file known, no snippet; and a partial docs map leaves other chunks bare
+    assert render_path(path_two_hop(), {}, {12: "people/anna.md"}) == (
+        'query:"Anna" → chunk#12 (people/anna.md) → entity:"kowalski" → chunk#31'
+    )
+
+
 def test_render_bm25_seed_and_missing_snippet() -> None:
     path = HopPath(None, (HopEdge("", 5, 0.0, 0),))
     assert render_path(path, {}) == "query:bm25 → chunk#5"

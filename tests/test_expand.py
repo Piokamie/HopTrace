@@ -8,9 +8,7 @@ from hoptrace.ingest import SourceDocument, ingest_documents
 from hoptrace.provenance import HopEdge, HopPath
 from hoptrace.store import Store
 
-# The canonical 2-hop shape: Anna -> Kowalski -> Room 204, plus a hub
-# entity ("Meridian") present in every chunk to exercise the specificity
-# filter, and unrelated chunks to make expansion selective.
+# Anna -> Kowalski -> Room 204, plus "Meridian" in every chunk as a hub.
 DOCS = [
     SourceDocument("p0", "Anna Nowak reports to Kowalski at Meridian.", "p0"),
     SourceDocument("p1", "Kowalski sits in Room 204 at Meridian.", "p1"),
@@ -79,8 +77,7 @@ def bm25_seed(chunk_id: int) -> Candidate:
 
 
 def test_specificity_filter_off_lets_hubs_through(store: Store) -> None:
-    # seed BM25-style so no entity is "already used" and the hub itself is
-    # followable when the filter is off
+    # BM25-style seed: no entity is "already used", so the hub is followable
     cfg = replace(CFG, specificity_filter=False)
     pool, _ = Expander(store, cfg).expand([bm25_seed(5)])
     # with the filter off the hub connects (nearly) everything
