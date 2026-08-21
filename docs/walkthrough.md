@@ -5,15 +5,16 @@ demo corpus (long `text:` lines elided with `…`, editorial notes marked
 `# …`) ([examples/office](../examples/office)) — 25 short documents
 about a fictional research institute, with entity bridges engineered so
 that seven designed questions ([examples/QUESTIONS.md](../examples/QUESTIONS.md))
-are genuinely two-hop: their answer documents share no content words with
-the questions. All of this is pinned by
+are genuinely multi-hop: their answer documents share no content words
+with the questions (question 5 deliberately shares one stem — see
+examples/QUESTIONS.md). All of this is pinned by
 [tests/test_demo_corpus.py](../tests/test_demo_corpus.py).
 
 ## 1. Ingest
 
 ```
 $ hoptrace ingest examples/office --corpus office
-corpus office: 25 documents, 25 chunks, 24 entities, 45 mentions (analyzer=english)
+corpus office: 25 documents, 25 chunks, 24 entities, 44 mentions (analyzer=english)
 ```
 
 Deterministic, sub-second, no LLM. Re-running replaces the corpus
@@ -33,7 +34,7 @@ there:
 
 ```
 $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 0
-#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.34, terms: Alicja, Rud)
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
 # … #2, #3 are unrelated lexical matches; chunk#12 is absent
 ```
@@ -42,7 +43,7 @@ With hop expansion, it appears at rank 2 — and says how it got there:
 
 ```
 $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2
-#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.34, terms: Alicja, Rud)
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
    text: Alicja Rud is a data engineer on the ingestion crew at Ostra Labs. …
 #2 chunk#12 (people/marek-sosna.md) [mention, hop 1] score 0.5231 (bm25 0.00, terms: none)
@@ -59,7 +60,7 @@ The path line is citable verbatim and names the file at every step:
 ```
 $ hoptrace explain 12 --corpus office --query "Where does the manager of Alicja Rud sit?"
 chunk#12 (people/marek-sosna.md, title=Marek Sosna)
-entities: budynek a, marek sosna, office b12, tuesday
+entities: marek sosna, office b12, tuesday
 for query 'Where does the manager of Alicja Rud sit?': rank #2 (top-k)
 path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew. Colleagues describe M…")
   bm25 term 'where': tf=0 df=0 score=0.0000
@@ -82,11 +83,11 @@ never reaches outside it:
 
 ```
 $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2 --rerank
-#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] rerank +4.818 (path 1.0000) (bm25 7.34, terms: Alicja, Rud)
+#1 chunk#8 (people/alicja-rud.md) [mention, hop 0] rerank +4.586 (path 1.0000) (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
-#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +1.044 (path 0.5231) (bm25 0.00, terms: none)
+#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +0.535 (path 0.5231) (bm25 0.00, terms: none)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md: "Marek Sosna leads the ingestion crew. Colleagues describe M…")
-#3 chunk#15 (people/tomasz-gil.md) [mention, hop 1] rerank -5.131 (path 0.3923) (bm25 0.00, terms: none)
+#3 chunk#15 (people/tomasz-gil.md) [mention, hop 1] rerank -3.755 (path 0.3923) (bm25 0.00, terms: none)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"ostra lab" → chunk#15 (people/tomasz-gil.md: "Tomasz Gil maintains the procurement ledger and reconciles…")
 ```
 
@@ -94,7 +95,10 @@ $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office 
 that set the order. They agree on the ranking here but not on
 confidence: the deterministic scorer separates the answer (0.5231) from
 an irrelevant hop through the "ostra lab" hub (0.3923) by 0.13, the
-reranker by 6.2 logits.
+reranker by 4.3 logits. On a 25-chunk corpus the reranker's absolute
+scores mean little (it is trained at corpus scale — on the two-bridge
+question 7 it even demotes the hop-2 answer the deterministic ranking
+surfaces); the measured gains are in [results.md](results.md).
 
 Provenance is unchanged — same paths, same citation line (`text:` lines
 elided above). Reranking is opt-in; the deterministic interleave stays

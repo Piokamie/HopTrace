@@ -1,6 +1,3 @@
-# Plans (local working docs)
-.plans/
-
 # Python
 __pycache__/
 *.py[cod]
@@ -23,6 +20,4 @@ models/**/hf/
 
 # IDE / OS / local tooling
 .idea/
-.claude/
-CLAUDE.md
 .DS_Store

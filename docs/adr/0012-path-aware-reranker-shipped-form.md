@@ -3,6 +3,9 @@ status: accepted
 date: 2026-08-18
 ---
 
+> Figures below are from the decision date; the retrained artifact
+> measures ≤0.008 metric cost and 1.6–1.9× speed (docs/results.md).
+
 # 12. Path-Aware Reranker: Shipped Form (Bundled int8 Default, Pinned Downloads, No Marginal-Completion)
 
 ## Context

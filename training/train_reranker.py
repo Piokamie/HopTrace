@@ -106,7 +106,12 @@ def main(argv: list[str] | None = None) -> int:
 
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    if torch.backends.mps.is_available():
+        device = "mps"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
     log(f"device={device} base={BASE_MODEL}")
 
     paths = [train_dir / s["output"] for s in dataset_manifest["sources"]]

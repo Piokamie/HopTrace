@@ -330,7 +330,7 @@ dominates; ranking sits at 95%+ of the ceiling for the candidates it
 sees (docs/results.md, pool oracle).
 
 - **Wider rescoring budget**: `rerank_top_n` is the single largest
-  measured lever on MuSiQue (~10 points of all-recall@20 sit outside the
+  measured lever on MuSiQue (~11 points of all-recall@20 sit outside the
   top 50; ~2 on 2Wiki), priced linearly in latency. Needs a sweep.
 - **Marginal-completion selection over learned scores** (ADR 0010 point
   5, unmeasured): the learned score as the λ no
@@ -345,7 +345,7 @@ sees (docs/results.md, pool oracle).
   query time) so paraphrased and abbreviated mentions land in the same
   bucket — extends the exact-match index without putting a model in the
   query path. `seed_alias` is a named, measured miss category.
-- **Hop-positive reweighting**: training positives are ~17:1 seed-to-hop,
+- **Hop-positive reweighting**: training positives are ~16:1 seed-to-hop,
   and the fine-tune gained more on effectively-single-hop questions than
   on multi-hop ones. Upweighting hop positives targets that gap.
 - **Best-route admission.** A chunk enters the pool with the first route

@@ -119,10 +119,26 @@ MODELS: dict[str, ModelSpec] = {
         name="hoptrace-rerank-minilm-l6",
         default_precision="int8",
         files=(
-            ModelFile("model_int8.onnx", f"{_RELEASE}/model_int8.onnx", _UNPINNED),
-            ModelFile("model.onnx", f"{_RELEASE}/model.onnx", _UNPINNED),
-            ModelFile("tokenizer.json", f"{_RELEASE}/tokenizer.json", _UNPINNED),
-            ModelFile("manifest.json", f"{_RELEASE}/manifest.json", _UNPINNED),
+            ModelFile(
+                "model_int8.onnx",
+                f"{_RELEASE}/model_int8.onnx",
+                "3dba0f4e51c710f6f1a8ef556b212225a5f34c3568a066b26d0a30d0e2b79742",
+            ),
+            ModelFile(
+                "model.onnx",
+                f"{_RELEASE}/model.onnx",
+                "404abde448e18ee9f7840a627ccaccd499ce355b8c23abb53cef0ba5c7e415ca",
+            ),
+            ModelFile(
+                "tokenizer.json",
+                f"{_RELEASE}/tokenizer.json",
+                "769987267933b9a47f55b5415f934fd3fe55315fbf2c6b84f1ba097fef28edb4",
+            ),
+            ModelFile(
+                "manifest.json",
+                f"{_RELEASE}/manifest.json",
+                "747f573da2e4f227f2ff182456d213b95489546ea42580a158176ca4031353c5",
+            ),
         ),
     ),
     "ms-marco-minilm-l6-v2": ModelSpec(

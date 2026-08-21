@@ -38,6 +38,7 @@ $ hoptrace retrieve "What can the manager of Alicja Rud see from the window?" --
 #3 chunk#25 (vendors/mira-catering.md) [bm25_only, hop 0] score 0.4049 (bm25 2.96, terms: manager)
 #4 chunk#5 (facilities/office-b12.md) [mention, hop 2] score 0.1723 (bm25 0.00, terms: none)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md) → entity:"marek sosna" → chunk#12 (people/marek-sosna.md) → entity:"office b12" → chunk#5 (facilities/office-b12.md: "Office B12 is a corner room on the second floor of Budynek…")
+# … per-result path: and text: lines elided except #4's path
 ```
 
 Result #4 shares zero words with the question (`terms: none`) and is two
@@ -76,9 +77,9 @@ HippoRAG (Gutiérrez et al., NeurIPS 2024):
 | | R@2 | R@5 |
 |---|---|---|
 | MuSiQue — HippoRAG, best variant (paper) | 41.0 | 52.1 |
-| MuSiQue — HopTrace 2hop + rerank (measured here) | 53.7 | 66.0 |
+| MuSiQue — HopTrace 2hop + rerank (measured here) | 54.2 | 66.1 |
 | 2Wiki — HippoRAG, best variant (paper) | 71.5 | 89.5 |
-| 2Wiki — HopTrace 2hop + rerank (measured here) | 73.6 | 86.3 |
+| 2Wiki — HopTrace 2hop + rerank (measured here) | 73.8 | 85.9 |
 
 2Wiki is held out of training entirely. The two BM25 floors agree to 0.1
 points on MuSiQue but differ by 5.3 on 2Wiki, so part of that margin is
@@ -135,7 +136,7 @@ the eval harness needs `hoptrace[eval]` (numpy), the learned reranker
 optional NER pass `hoptrace[ner]` (spaCy).
 
 ```bash
-uv sync            # or: pip install -e .
+uv sync            # or: pip install -e .  (extras: pip install -e '.[eval,rerank]')
 uv run hoptrace ingest examples/office --corpus office
 uv run hoptrace retrieve "What equipment is in the room where the calibration team meets?" --corpus office
 uv run hoptrace bracket --corpus office
@@ -230,8 +231,8 @@ ships with the repository — `models/hoptrace-rerank-minilm-l6/` holds the
 int8 graph (23 MB), tokenizer and training manifest, so a clone runs it
 offline. Its fp32 graph is a release download (91 MB, cached under
 `$HOPTRACE_DATA_DIR/models/`, sha256-pinned): `--rerank-precision fp32`.
-The headline tables report fp32; int8 is within 0.005 on every measured
-metric at ~2× the speed. The zero-shot base the model was fine-tuned from
+The headline tables report fp32; int8 is within 0.008 on every measured
+metric at 1.6–1.9× the speed. The zero-shot base the model was fine-tuned from
 is `--rerank-model ms-marco-minilm-l6-v2` (fp32 only; asking it for int8
 exits with `no model_int8.onnx in …: this artifact does not ship a int8
 graph`). A directory built by [training/](training/README.md) works as
@@ -241,7 +242,7 @@ the same for the MCP server.
 Reranked output prints both scores, since the learned one sets the order:
 
 ```
-#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +1.044 (path 0.5231) (bm25 0.00, terms: none)
+#2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +0.535 (path 0.5231) (bm25 0.00, terms: none)
 ```
 
 Expect ~0.5–1 s per query on CPU against ~10 ms deterministic. Without
@@ -386,7 +387,7 @@ ships the short version as MCP `instructions`.
 
 ```bash
 uv sync --extra eval --extra rerank
-uv run hoptrace eval --dataset beir-hotpotqa --gate        # downloads + builds once (~1h)
+uv run hoptrace eval --dataset beir-hotpotqa --gate   # downloads + builds once (about an hour; hardware-dependent)
 # the comparable protocol: HippoRAG's published 1,000-question samples + corpora
 # (the table rows: bundled fine-tuned model, fp32 graph)
 uv run hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision fp32 --diagnostics

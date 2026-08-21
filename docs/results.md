@@ -83,7 +83,7 @@ from its Table 2; rows marked *(measured here)* are from
 | Proposition (paper) | 37.6 | 49.3 |
 | HippoRAG, best variant (paper) | 41.0 | 52.1 |
 | HopTrace 2hop + zero-shot rerank (measured here) | 42.4 | 57.8 |
-| HopTrace 2hop + fine-tuned rerank (measured here) | 53.7 | 66.0 |
+| HopTrace 2hop + fine-tuned rerank (measured here) | 54.2 | 66.1 |
 
 **2WikiMultihopQA** (6,119 passages, 1,000 questions) — the transfer
 holdout, absent from training entirely (ADR 0011):
@@ -95,7 +95,7 @@ holdout, absent from training entirely (ADR 0011):
 | ColBERTv2 (paper) | 59.2 | 68.2 |
 | HippoRAG, best variant (paper) | 71.5 | 89.5 |
 | HopTrace 2hop + zero-shot rerank (measured here) | 58.1 | 76.5 |
-| HopTrace 2hop + fine-tuned rerank (measured here) | 73.6 | 86.3 |
+| HopTrace 2hop + fine-tuned rerank (measured here) | 73.8 | 85.9 |
 
 Two differences affect how the rows compare. The two BM25 rows are not
 the same system: they agree to 0.1 points on MuSiQue (32.4 vs 32.3) but
@@ -106,9 +106,9 @@ LLM (OpenIE over the corpus); HopTrace uses entity expansion plus a CPU
 cross-encoder (91 MB fp32, 23 MB int8).
 
 Fine-tuned rows use the bundled reranker (`models/hoptrace-rerank-minilm-l6`,
-fp32 graph), trained with evaluation-gold passages excluded. The
-exposure-full ablation model appears only where marked: the exclusion
-ablation table.
+fp32 graph). Its training set contains no evaluation-gold passage at all
+(the leak audit below measures 0 of 2,648); the ablation model trained
+with them kept appears only in the exclusion-ablation table.
 
 ### all-recall, @5
 
@@ -116,87 +116,65 @@ Fraction of queries for which *every* supporting passage is retrieved:
 
 | | floor | 2hop | + zero-shot | + fine-tuned |
 |---|---|---|---|---|
-| MuSiQue | 9.7 | 13.1 | 27.2 | 33.6 |
-| 2Wiki | 35.9 | 41.7 | 49.6 | 67.6 |
+| MuSiQue | 9.7 | 13.1 | 27.2 | 33.4 |
+| 2Wiki | 35.9 | 41.7 | 49.6 | 66.7 |
 
 ## Training-to-evaluation leak audit
 
 The reranker trains on MuSiQue and HotpotQA *train* splits and is
 evaluated on dev questions. Wikipedia paragraphs recur across questions,
-so separate questions do not imply separate passages.
+so separate questions do not imply separate passages. The builder
+therefore excludes every evaluation-gold passage from training — as the
+scored candidate and as the route-context parent, matched on
+whitespace-normalized text across both evaluation sets — and
+`training/audit_exposure.py` verifies the result over every training
+source:
 
-| check | result |
+| check (MuSiQue evaluation set; 2Wiki never enters training at all) | result |
 |---|---|
 | eval questions also in the training set | 0 / 1,000 |
-| eval-corpus passages ever scored during training | 1,937 / 11,656 (16.6%) |
-| eval gold passages ever scored during training | 800 / 2,648 (30.2%) |
-| eval gold passages ever scored as a positive | 0 / 2,648 (0.0%) |
+| eval-corpus passages seen during training (candidate or parent) | 2,159 / 11,655¹ (18.5%) |
+| eval gold passages seen during training | 0 / 2,648 (0.0%) |
+| eval gold passages scored as a positive | 0 / 2,648 (0.0%) |
 
-Training positives are pool∩gold *for train questions*, so a dev
-question's gold can only enter training unlabeled or as a negative. The
-30% that appeared were all negatives — bias, if any, toward down-ranking
-dev gold.
+¹ unique passages after whitespace normalization; the corpus file holds
+11,656 entries, one a duplicate.
 
-By exposure (601 questions with ≥1 exposed gold, 399 without), MuSiQue
-R@2:
-
-| system | *none* (n=399) | *seen* (n=601) | none/seen |
-|---|---|---|---|
-| BM25 floor (no training at all) | 36.0 | 30.1 | 1.196 |
-| zero-shot (never fine-tuned) | 49.5 | 37.7 | 1.311 |
-| fine-tuned | 59.9 | 50.6 | 1.182 |
-
-Fine-tuning gains more on the exposed bucket (+12.90 vs +10.40 R@2). The
-untrained floor and the never-fine-tuned cross-encoder show the same
-none/seen gap, so the buckets differ in difficulty independently of any
-training: a passage enters training pools because retrieval surfaces it
-often. Fine-tuning narrows that gap (1.311 → 1.182).
+The 18.5% of corpus passages that do occur in training are distractors
+shared with train questions, none of them gold for any evaluation
+question. Every evaluation question sits in the *none* exposure bucket,
+so no exposure-split analysis applies to the bundled model; what the
+exclusion costs is measured directly below.
 
 ### Exclusion ablation
 
-Retrained from scratch with every evaluation-gold passage removed — as
-candidate and as route-context parent, across both eval sets (3,795
-passages, 11,420 rows), same seed and hyperparameters.
+The ablation baseline is the same trainer run on the same retrieval
+pass with the exclusion switched off (`--keep-eval-gold`): its training
+set contains the 3,795 evaluation-gold passages as unlabeled pool
+members and negatives. The eval harness marks it NOT PUBLISHABLE.
 
-| MuSiQue | original | exposure-free | Δ |
+| MuSiQue | with eval gold | excluded (bundled) | Δ |
 |---|---|---|---|
-| R@2 | 54.33 | 53.73 | −0.60 |
-| R@5 | 66.49 | 66.03 | −0.46 |
-| all-recall@5 | 34.20 | 33.60 | −0.60 |
+| R@2 | 54.32 | 54.15 | −0.17 |
+| R@5 | 65.70 | 66.09 | +0.39 |
+| all-recall@5 | 33.20 | 33.40 | +0.20 |
 
-| 2Wiki (holdout) | original | exposure-free | Δ |
+| 2Wiki (holdout) | with eval gold | excluded (bundled) | Δ |
 |---|---|---|---|
-| R@2 | 73.80 | 73.60 | −0.20 |
-| R@5 | 86.02 | 86.25 | +0.23 |
-| all-recall@5 | 67.20 | 67.60 | +0.40 |
+| R@2 | 73.60 | 73.80 | +0.20 |
+| R@5 | 85.85 | 85.90 | +0.05 |
+| all-recall@5 | 66.80 | 66.70 | −0.10 |
 
-Movement is ≤1 point with mixed signs on the holdout, and is not
-concentrated on the exposed bucket:
-
-| | *none* (n=399) | *seen* (n=601) | difference |
-|---|---|---|---|
-| R@2 | −0.54 | −0.63 | −0.09 |
-| all-recall@2 | −1.00 | −0.99 | +0.01 |
-| R@5 | −0.73 | −0.27 | +0.46 |
-
-The *none* bucket has no exposed gold passages, so removing those
-passages cannot affect it through memorization, yet it moves as much as
-the exposed bucket. The residual is training-sample variation: the
-sampler caps negatives at 6+6 per query, so the filtered set differs by
-29 of 618,273 sampled rows.
-
-The bundled artifact is the exposure-free model regardless.
-`training/build_dataset.py` applies the exclusion by default;
-`--keep-eval-gold` builds the ablation baseline, and models built that
-way are marked NOT PUBLISHABLE in the eval report.
+Movement is ≤0.4 points with mixed signs on both datasets: training
+exposure to evaluation gold contributes nothing measurable, and the
+shipped model has none by construction.
 
 Reproduce the counts with
 `uv run --extra eval python training/audit_exposure.py` (writes
 `$HOPTRACE_DATA_DIR/eval/hipporag-musique-exposure.json` and a report
-beside it), then the split with
-`hoptrace eval … --strata-file $HOPTRACE_DATA_DIR/eval/hipporag-musique-exposure.json`.
-The exclusion ablation trains the default (excluded) set against one
-built with `--keep-eval-gold` (`training/README.md`).
+beside it). The ablation pair is one retrieval pass:
+`training/build_dataset.py --keep-eval-gold` then `--from` that
+directory (`training/README.md`).
 
 ## What the learned ranker changed
 
@@ -210,9 +188,9 @@ Full grid at the HippoRAG protocol, all-recall@k (`ag`) beside recall:
 | 2hop interleave (v1) | 28.6 | 5.2 | 42.2 | 13.1 | 60.8 | 32.0 | 9 ms |
 | + zero-shot, path OFF | 43.4 | 9.5 | 56.2 | 21.8 | 69.6 | 39.5 | 828 ms |
 | + zero-shot, path ON | 42.4 | 12.3 | 57.8 | 27.2 | 72.3 | 44.2 | 872 ms |
-| + fine-tuned, path OFF | 49.8 | 11.6 | 61.6 | 26.4 | 73.0 | 45.1 | 884 ms |
-| + fine-tuned (int8) | 53.2 | 18.0 | 66.0 | 33.7 | 73.9 | 46.6 | 500 ms |
-| + fine-tuned (fp32) | 53.7 | 18.4 | 66.0 | 33.6 | 73.9 | 46.4 | 992 ms |
+| + fine-tuned, path OFF | 49.7 | 11.5 | 61.5 | 26.4 | 72.8 | 45.0 | 889 ms |
+| + fine-tuned (int8) | 53.4 | 18.1 | 66.3 | 33.9 | 74.0 | 46.6 | 524 ms |
+| + fine-tuned (fp32) | 54.2 | 18.8 | 66.1 | 33.4 | 74.0 | 46.8 | 974 ms |
 
 **2WikiMultihopQA** (holdout)
 
@@ -222,9 +200,9 @@ Full grid at the HippoRAG protocol, all-recall@k (`ag`) beside recall:
 | 2hop interleave (v1) | 46.9 | 8.9 | 71.2 | 41.7 | 86.2 | 66.6 | 6 ms |
 | + zero-shot, path OFF | 63.6 | 29.5 | 72.2 | 42.2 | 86.2 | 67.2 | 747 ms |
 | + zero-shot, path ON | 58.1 | 26.1 | 76.5 | 49.6 | 90.2 | 75.8 | 795 ms |
-| + fine-tuned, path OFF | 67.9 | 35.9 | 75.4 | 47.4 | 87.2 | 69.4 | 839 ms |
-| + fine-tuned (int8) | 73.4 | 46.9 | 86.2 | 67.5 | 90.6 | 76.7 | 466 ms |
-| + fine-tuned (fp32) | 73.6 | 47.3 | 86.3 | 67.6 | 90.7 | 76.8 | 927 ms |
+| + fine-tuned, path OFF | 67.7 | 35.5 | 75.1 | 47.3 | 87.6 | 70.2 | 1027 ms |
+| + fine-tuned (int8) | 73.7 | 47.5 | 85.7 | 66.3 | 90.7 | 76.8 | 585 ms |
+| + fine-tuned (fp32) | 73.8 | 47.7 | 85.9 | 66.7 | 90.8 | 77.0 | 953 ms |
 
 ### Route context
 
@@ -238,15 +216,16 @@ train/test mismatch.
   retrieves the bridge partner that completes the set.
 - Fine-tuned without route context loses to zero-shot with it on
   all-recall@5 (MuSiQue 26.4 vs 27.2).
-- On the holdout the gap is larger: 2Wiki all-recall@5 is 47.4 with
-  route context stripped, 67.6 with it.
+- On the holdout the gap is larger: 2Wiki all-recall@5 is 47.3 with
+  route context stripped, 66.7 with it.
 
-### int8 quantization: 2× faster, ≤0.005 cost
+### int8 quantization: 1.6–1.9× faster, ≤0.008 cost
 
-Dynamic int8 halves latency (500 vs 992 ms median on MuSiQue). The
-largest deviation across both datasets is 0.005 (MuSiQue R@2, 53.7 →
-53.2), and on some metrics int8 is marginally ahead (MuSiQue
-all-recall@5 33.7 vs 33.6). Select with `--rerank-precision int8`
+Dynamic int8 nearly halves latency (524 vs 974 ms median on MuSiQue).
+The largest deviation across both datasets is 0.008 (MuSiQue
+all-recall@10, 42.0 → 41.2; in the grid above the largest is R@2,
+54.2 → 53.4), and on some metrics int8 is marginally ahead (MuSiQue
+all-recall@5 33.9 vs 33.4). Select with `--rerank-precision int8`
 (`RetrievalConfig(rerank_precision="int8")`); it is what `--rerank`
 loads by default from the bundled model, and the headline rows are fp32.
 
@@ -258,13 +237,13 @@ HippoRAG protocol:
 
 | level | ag@5 | ag@20 | gap above |
 |---|---|---|---|
-| fine-tuned achieved | 33.6 | 46.4 | — |
+| fine-tuned achieved | 33.4 | 46.8 | — |
 | ceiling over the top-50 scored | 48.7 | 48.7 | model headroom |
 | ceiling over the full pool | 59.8 | 59.8 | top-N truncation |
 | perfect | 100 | 100 | expansion never reached it |
 
-At k=20 the reranker reaches 95.3% of the ceiling for the candidates it
-scores (98.5% on recall@20). The remaining headroom is in the top-N
+At k=20 the reranker reaches 96.1% of the ceiling for the candidates it
+scores (98.7% on recall@20). The remaining headroom is in the top-N
 budget (`rerank_top_n`, linear in latency) and in expansion coverage,
 which the miss taxonomy attributes to `hop_bound` and `seed_alias`.
 
@@ -303,7 +282,7 @@ defeat shortcuts, measures most-genuinely multi-hop; 62% of HotpotQA's
 
 | System | r@20 | ag@20 | ag@20 eff-multi | ag@20 eff-single | Latency med |
 |---|---|---|---|---|---|
-| floor | 0.708 | 0.415 | 0.071 | 0.422 | 1.0 ms |
+| floor | 0.708 | 0.415 | 0.071 | 0.422 | 0.9 ms |
 | HopTrace@1hop | 0.801 | 0.575 | — | — | 4.2 ms |
 | HopTrace@2hop | 0.774 | 0.529 | 0.342 | 0.478 | 8.6 ms |
 
@@ -410,9 +389,8 @@ Two findings:
 ## Scaling: the same systems across three corpus sizes
 
 MuSiQue dev queries, all-recall@20, as the haystack grows. All three
-columns use the exposure-full model, so the comparison is one model
-across corpus sizes (at 11,656 the bundled model scores 46.4 against
-this table's 46.5). Strata are recomputed per corpus — the
+columns use the bundled model, so the comparison is one model across
+corpus sizes. Strata are recomputed per corpus — the
 answerability rule is corpus-dependent, and the effective-multi stratum
 grows from 1,580 to 1,681 queries at 101,962 — so strata comparisons
 hold within a column, not across.
@@ -422,7 +400,7 @@ hold within a column, not across.
 | floor | 23.7 | 21.0 | 16.0 |
 | 2hop interleave | 32.0 | 27.9 | 20.9 |
 | + zero-shot rerank | 44.2 | 38.6 | 30.5 |
-| + fine-tuned rerank | 46.5 | 41.0 | 32.2 |
+| + fine-tuned rerank | 46.8 | 41.0 | 32.1 |
 
 Every system degrades as the corpus grows. Across the range the ordering
 does not invert (floor < hops < zero-shot < fine-tuned at every scale).
@@ -479,10 +457,15 @@ data, any manifest that does not describe the graphs beside it, and any
 dirty-tree artifact.
 
 BEIR index: 5,233,329 passages → 13.3M entities, 50.4M mentions, 8.4 GB
-SQLite, 1.14 h build (Apple Silicon, single-threaded). Datasets download
+SQLite, 1.14 h single-threaded build on a laptop-class CPU. Datasets download
 to `$HOPTRACE_DATA_DIR/datasets/` with recorded checksums; never committed.
 Rerank latency is measured at the shipped default of 4 ONNX threads,
 `rerank_top_n=50`, on CPU; the deterministic rows are single-threaded.
+Fine-tuned rows were measured 2026-08-21 with the bundled artifact;
+floor, deterministic and zero-shot rows carry over from the prior
+campaign — those models and the deterministic pipeline are unchanged, so
+their metrics are reproducible bit-for-bit, and their latency medians
+were measured under the same thread settings on the same machine.
 
 ## Dataset attributions
 

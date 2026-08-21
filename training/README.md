@@ -62,7 +62,7 @@ Writes to `$HOPTRACE_DATA_DIR/training/`: `musique-train.jsonl`,
 `hotpotqa-train.jsonl`, `dataset_manifest.json`, plus the reusable
 `musique-train-pool.sqlite` pooled index.
 
-Costs (Apple Silicon, single process): MuSiQue-train downloads 241 MB
+Costs (single process, laptop-class CPU): MuSiQue-train downloads 241 MB
 and pools 84,559 unique paragraphs; HotpotQA reuses the persistent
 5.2M-passage BEIR index (build it first with `hoptrace eval --dataset
 beir-hotpotqa` if missing) and is capped at 30k of ~85k train queries by
@@ -82,10 +82,11 @@ uv run --group train --extra eval python training/train_reranker.py
 ```
 
 Fine-tunes `cross-encoder/ms-marco-MiniLM-L6-v2` as a pointwise binary
-scorer (BCE) on torch (MPS when available). Sampling per query: every
+scorer (BCE) on torch (CUDA or MPS when available, else CPU — much
+slower). Sampling per query: every
 positive plus at most `--neg-seed` seed negatives and `--neg-hop` hop
 negatives (defaults 6/6); the pool is ~3% positive and hop positives
-are roughly 17× rarer than seed positives, hence the hop quota. A
+are roughly 16× rarer than seed positives, hence the hop quota. A
 `--holdback` slice (3%) of train queries drives checkpoint selection by
 per-query MRR.
 
@@ -99,8 +100,8 @@ history, output file checksums, and the trainer commit (`<sha>` or
 reads this manifest and refuses to run when the split under evaluation
 appears in `trained_on` (`hoptrace eval … --selection rerank --rerank-model <dir>`).
 
-Cost: 1 epoch over ~47k queries (~600k sampled rows) is ~3 h on Apple
-Silicon MPS. Smoke-test the whole path first with `--max-queries 300
+Cost: 1 epoch over ~48k queries (~630k sampled rows) is ~3 h with GPU
+acceleration. Smoke-test the whole path first with `--max-queries 300
 --eval-every 50 --out /tmp/smoke` (~2 min).
 
 ## 3. Bundle for distribution (ADR 0012)

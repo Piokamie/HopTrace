@@ -58,7 +58,7 @@ class RetrievalConfig:
     #: rerank: model directory or registry name; None resolves
     #: $HOPTRACE_RERANK_MODEL, then the bundled model.
     rerank_model: str | None = None
-    #: rerank: "fp32" or "int8" (~2× faster at ≤0.005 metric cost); None
+    #: rerank: "fp32" or "int8" (1.6-1.9x faster at <=0.008 metric cost); None
     #: takes the artifact's default.
     rerank_precision: str | None = None
     #: rerank ablation: False drops the route-context prefix so the model scores bare text.

@@ -47,8 +47,6 @@ Alternatives rejected:
   the category (RAG) — every retrieve result is a small advertisement for
   the name.
 - v1 is publishable on its own merits whenever its owner chooses.
-- Historical artifacts (ADRs 0001–0008, archived eval reports, the plan
-  file) retain "LRAG"/"lrag" wording and labels; readers of the decision
-  log will encounter both names, with this ADR as the bridge.
-- The working-directory name on the author's machine may lag the rename;
-  the repository name at publication time should be `hoptrace`.
+- Historical artifacts (ADRs 0001–0008 and pre-rename eval reports)
+  retain "LRAG"/"lrag" wording and labels; readers of the decision log
+  will encounter both names, with this ADR as the bridge.

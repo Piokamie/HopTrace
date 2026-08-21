@@ -1,0 +1,145 @@
+{
+  "base_model": "cross-encoder/ms-marco-MiniLM-L6-v2",
+  "created": "2026-08-20T16:25:05+0200",
+  "dirty": false,
+  "exclusion": {
+    "eval_gold_passages_excluded": 3795,
+    "reason": "evaluation gold passages removed from training (as candidate and as route-context parent, whitespace-normalized match), so training exposure cannot contribute to reported gains",
+    "sources": [
+      "hipporag-musique",
+      "hipporag-2wiki"
+    ]
+  },
+  "files": {
+    "model.onnx": "404abde448e18ee9f7840a627ccaccd499ce355b8c23abb53cef0ba5c7e415ca",
+    "model_int8.onnx": "3dba0f4e51c710f6f1a8ef556b212225a5f34c3568a066b26d0a30d0e2b79742",
+    "tokenizer.json": "769987267933b9a47f55b5415f934fd3fe55315fbf2c6b84f1ba097fef28edb4"
+  },
+  "holdout": [
+    "2wiki"
+  ],
+  "model": "hoptrace-rerank-minilm-l6",
+  "retrieval": {
+    "bm25_b": 0.4,
+    "bm25_k1": 0.9,
+    "hops": 2,
+    "k": 20,
+    "order": "interleave",
+    "seed_depth": 20,
+    "top_n": 50,
+    "window": "Retriever.candidate_window (ADR 0012)"
+  },
+  "serialize_format": "via {entity} | {parent_snippet} || {text}",
+  "trained_on": [
+    {
+      "dataset": "musique",
+      "limit": null,
+      "questions": 18910,
+      "source_sha256": "83a75b1e11e4e9bb8f8308e72ac40ca617ae4431b3a0d955b61cab259248490a",
+      "split": "train"
+    },
+    {
+      "dataset": "hotpotqa",
+      "limit": 30000,
+      "questions": 29060,
+      "source_sha256": "12d4f4898fe7888669f6ccc1feec5c31b42bc0985d9a445e2a442e28d1fd3918",
+      "split": "train"
+    }
+  ],
+  "trainer_commit": "c4d9cd984c438198ddfe283fd37db06513949571",
+  "training": {
+    "batch_size": 32,
+    "best_heldback_mrr": 0.9655513614252321,
+    "epochs": 1,
+    "heldback_queries": 1439,
+    "history": [
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.014705882352941176,
+        "hop_queries": 136,
+        "mrr": 0.9493486939282632,
+        "step": 2000,
+        "top1": 0.9145239749826268
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.029411764705882353,
+        "hop_queries": 136,
+        "mrr": 0.9525502294786521,
+        "step": 4000,
+        "top1": 0.9186935371785963
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.03676470588235294,
+        "hop_queries": 136,
+        "mrr": 0.957556504186108,
+        "step": 6000,
+        "top1": 0.9270326615705351
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.051470588235294115,
+        "hop_queries": 136,
+        "mrr": 0.9592778775544583,
+        "step": 8000,
+        "top1": 0.9298123697011814
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.051470588235294115,
+        "hop_queries": 136,
+        "mrr": 0.9586569350927769,
+        "step": 10000,
+        "top1": 0.9284225156358582
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.029411764705882353,
+        "hop_queries": 136,
+        "mrr": 0.9622603604796099,
+        "step": 12000,
+        "top1": 0.9346768589298123
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.0661764705882353,
+        "hop_queries": 136,
+        "mrr": 0.9638404921848284,
+        "step": 14000,
+        "top1": 0.936761640027797
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.0661764705882353,
+        "hop_queries": 136,
+        "mrr": 0.965363678480426,
+        "step": 16000,
+        "top1": 0.940236275191105
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.051470588235294115,
+        "hop_queries": 136,
+        "mrr": 0.9655513614252321,
+        "step": 18000,
+        "top1": 0.9395413481584434
+      },
+      {
+        "epoch": 0,
+        "hop_gold_top1": 0.058823529411764705,
+        "hop_queries": 136,
+        "mrr": 0.9652299576726261,
+        "step": 19813,
+        "top1": 0.9395413481584434
+      }
+    ],
+    "holdback_fraction": 0.03,
+    "lr": 2e-05,
+    "max_queries": null,
+    "neg_hop": 6,
+    "neg_seed": 6,
+    "seed": 0,
+    "train_queries": 46531
+  }
+}
