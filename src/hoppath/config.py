@@ -56,7 +56,7 @@ class RetrievalConfig:
     #: rerank: ONNX intra-op threads; fixed so scores do not vary with core count.
     rerank_threads: int = 4
     #: rerank: model directory or registry name; None resolves
-    #: $HOPTRACE_RERANK_MODEL, then the bundled model.
+    #: $HOPPATH_RERANK_MODEL, then the bundled model.
     rerank_model: str | None = None
     #: rerank: "fp32" or "int8" (1.6-1.9x faster at <=0.008 metric cost); None
     #: takes the artifact's default.
@@ -75,7 +75,7 @@ class RetrievalConfig:
 
 def data_dir() -> Path:
     """Local data root for corpora and downloaded datasets."""
-    return Path(os.environ.get("HOPTRACE_DATA_DIR", ".hoptrace"))
+    return Path(os.environ.get("HOPPATH_DATA_DIR", ".hoppath"))
 
 
 def models_dir() -> Path:

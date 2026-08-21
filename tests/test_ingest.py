@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.config import ChunkConfig
-from hoptrace.ingest import SourceDocument, ingest_documents, ingest_path
+from hoppath.config import ChunkConfig
+from hoppath.ingest import SourceDocument, ingest_documents, ingest_path
 
 DOCS = [
     SourceDocument(
@@ -51,7 +51,7 @@ def test_empty_documents_skipped() -> None:
 
 
 def test_ingest_path_walks_and_skips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     src = tmp_path / "corpus"
     src.mkdir()
     (src / "a.md").write_text("# A\n\nAnna reports to Kowalski.")
@@ -69,7 +69,7 @@ def test_ingest_path_walks_and_skips(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_ingest_path_no_text_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     src = tmp_path / "corpus"
     src.mkdir()
     (src / "binary.bin").write_bytes(b"\x00")

@@ -18,7 +18,7 @@
   "holdout": [
     "2wiki"
   ],
-  "model": "hoptrace-rerank-minilm-l6",
+  "model": "hoppath-rerank-minilm-l6",
   "retrieval": {
     "bm25_b": 0.4,
     "bm25_k1": 0.9,

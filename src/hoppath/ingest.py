@@ -11,12 +11,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from hoptrace.chunker import Chunk, chunk_document
-from hoptrace.config import ChunkConfig, ExtractorConfig, corpus_path
-from hoptrace.mentions import EXTRACTOR_VERSION, Mention, MentionExtractor, collect_non_initial_caps
-from hoptrace.normalize import Normalizer, TrivialNormalizer
-from hoptrace.store import Store, StoreWriter
-from hoptrace.tokenize import analyze
+from hoppath.chunker import Chunk, chunk_document
+from hoppath.config import ChunkConfig, ExtractorConfig, corpus_path
+from hoppath.mentions import EXTRACTOR_VERSION, Mention, MentionExtractor, collect_non_initial_caps
+from hoppath.normalize import Normalizer, TrivialNormalizer
+from hoppath.store import Store, StoreWriter
+from hoppath.tokenize import analyze
 
 _TEXT_SUFFIXES = frozenset({".md", ".markdown", ".txt", ".rst"})
 

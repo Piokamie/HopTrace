@@ -15,8 +15,8 @@ from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from hoptrace.config import ExtractorConfig
-from hoptrace.normalize import Normalizer, TrivialNormalizer
+from hoppath.config import ExtractorConfig
+from hoppath.normalize import Normalizer, TrivialNormalizer
 
 if TYPE_CHECKING:
     from spacy.language import Language
@@ -136,7 +136,7 @@ def _load_spacy(model: str) -> Language:
         import spacy
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise RuntimeError(
-            "the NER pass requires spaCy: install with `pip install 'hoptrace[ner]'` "
+            "the NER pass requires spaCy: install with `pip install 'hoppath[ner]'` "
             f"and download the model with `python -m spacy download {model}`"
         ) from exc
     nlp: Any = spacy.load(model, disable=["lemmatizer", "tagger"])

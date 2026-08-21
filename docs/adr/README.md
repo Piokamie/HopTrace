@@ -14,3 +14,4 @@
 | [10](0010-path-aware-cross-encoder-reranker.md) | | Path-Aware Cross-Encoder Rescoring of the Deterministic Pool | superseded by 0012 | 2026-08-14 |
 | [11](0011-training-data-wall-and-2wiki-holdout.md) | | Training-Data Wall: Train Splits Only, Manifest Tripwire, 2Wiki Holdout | accepted | 2026-08-14 |
 | [12](0012-path-aware-reranker-shipped-form.md) | | Path-Aware Reranker: Shipped Form (Bundled int8 Default, Pinned Downloads, No Marginal-Completion) | accepted | 2026-08-18 |
+| [13](0013-rename-to-hoppath.md) | | Rename HopTrace to HopPath | accepted | 2026-08-21 |

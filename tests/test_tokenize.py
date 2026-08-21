@@ -1,4 +1,4 @@
-from hoptrace.tokenize import tokenize
+from hoppath.tokenize import tokenize
 
 
 def test_lowercases_and_splits() -> None:

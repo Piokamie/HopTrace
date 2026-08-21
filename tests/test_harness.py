@@ -2,21 +2,21 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.eval.adapters import (
+from hoppath.eval.adapters import (
     load_beir_qrels,
     load_beir_queries,
     load_hotpot_format,
     load_musique,
 )
-from hoptrace.eval.corpus_build import build_beir_index
-from hoptrace.eval.harness import (
+from hoppath.eval.corpus_build import build_beir_index
+from hoppath.eval.harness import (
     HIT_RULE,
     LatencyStats,
     evaluate_beir_floor,
     evaluate_distractor_floor,
     evaluate_pooled_floor,
 )
-from hoptrace.store import Store
+from hoppath.store import Store
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

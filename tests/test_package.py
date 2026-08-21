@@ -1,5 +1,5 @@
-import hoptrace
+import hoppath
 
 
 def test_version() -> None:
-    assert hoptrace.__version__ == "0.1.0"
+    assert hoppath.__version__ == "0.1.0"

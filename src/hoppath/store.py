@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 
-from hoptrace.chunker import Chunk
-from hoptrace.mentions import Mention
+from hoppath.chunker import Chunk
+from hoppath.mentions import Mention
 
 SCHEMA_VERSION = "1"
 

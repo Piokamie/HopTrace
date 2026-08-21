@@ -1,5 +1,5 @@
-from hoptrace.chunker import chunk_document
-from hoptrace.config import ChunkConfig
+from hoppath.chunker import chunk_document
+from hoppath.config import ChunkConfig
 
 DOC = """# Office Guide
 
@@ -54,7 +54,7 @@ def test_empty_inputs() -> None:
 
 
 def test_token_counts_match_tokenizer() -> None:
-    from hoptrace.tokenize import tokenize
+    from hoppath.tokenize import tokenize
 
     chunks = chunk_document(DOC)
     for chunk in chunks:

@@ -30,7 +30,7 @@ For every train question the deterministic retriever produces **exactly
 the candidate window rerank inference scores** — `Retriever.candidate_window`
 with inference's k (20 → 20 BM25 seeds), hops=2, interleave order, top 50,
 eval BM25 parameters (k1 0.9, b 0.4). Each candidate is serialized with
-the same `hoptrace.rerank.serialize_pair` the scorer uses and labeled by
+the same `hoppath.rerank.serialize_pair` the scorer uses and labeled by
 pool-gold membership. Non-gold pool members are the hard negatives.
 Queries with no positive in the window are dropped and counted. The
 manifest records `retrieval.seed_depth`; a different seed depth is a
@@ -51,25 +51,25 @@ that way `NOT PUBLISHABLE` in its report.
 The exclusion ablation pair comes from one retrieval pass:
 
 ```
-uv run --extra eval python training/build_dataset.py --keep-eval-gold --out $HOPTRACE_DATA_DIR/training-full
-uv run --extra eval python training/build_dataset.py --from $HOPTRACE_DATA_DIR/training-full --out $HOPTRACE_DATA_DIR/training
+uv run --extra eval python training/build_dataset.py --keep-eval-gold --out $HOPPATH_DATA_DIR/training-full
+uv run --extra eval python training/build_dataset.py --from $HOPPATH_DATA_DIR/training-full --out $HOPPATH_DATA_DIR/training
 ```
 
 `--from` filters row-wise on the structured keys and writes the same
 rows a fresh exclusion-on build would, with `derived_from` recorded.
 
-Writes to `$HOPTRACE_DATA_DIR/training/`: `musique-train.jsonl`,
+Writes to `$HOPPATH_DATA_DIR/training/`: `musique-train.jsonl`,
 `hotpotqa-train.jsonl`, `dataset_manifest.json`, plus the reusable
 `musique-train-pool.sqlite` pooled index.
 
 Costs (single process, laptop-class CPU): MuSiQue-train downloads 241 MB
 and pools 84,559 unique paragraphs; HotpotQA reuses the persistent
-5.2M-passage BEIR index (build it first with `hoptrace eval --dataset
+5.2M-passage BEIR index (build it first with `hoppath eval --dataset
 beir-hotpotqa` if missing) and is capped at 30k of ~85k train queries by
 default (`--limit-hotpot`; the cap is recorded in the manifest). Expect a
 few hours total.
 
-The product's `hoptrace retrieve` seeds with BM25 k1=1.5, b=0.75 while
+The product's `hoppath retrieve` seeds with BM25 k1=1.5, b=0.75 while
 training and eval use 0.9/0.4 (the published-baseline configuration): the
 shipped reranker is trained on eval-seeded pools and served over
 product-seeded ones (tracked in DESIGN.md's roadmap).
@@ -90,7 +90,7 @@ are roughly 16× rarer than seed positives, hence the hop quota. A
 `--holdback` slice (3%) of train queries drives checkpoint selection by
 per-query MRR.
 
-Output (`$HOPTRACE_DATA_DIR/models/hoptrace-rerank-minilm-l6/`):
+Output (`$HOPPATH_DATA_DIR/models/hoppath-rerank-minilm-l6/`):
 `model.onnx` (fp32, ~91 MB), `model_int8.onnx` (dynamic int8, ~23 MB),
 `tokenizer.json`, `hf/` (checkpoint), and `manifest.json` — derived from
 `dataset_manifest.json`, recording `trained_on`, `holdout`, source
@@ -98,7 +98,7 @@ checksums, retrieval settings, training hyperparameters, the validation
 history, output file checksums, and the trainer commit (`<sha>` or
 `<sha>-dirty`; train from a clean, committed tree). The eval harness
 reads this manifest and refuses to run when the split under evaluation
-appears in `trained_on` (`hoptrace eval … --selection rerank --rerank-model <dir>`).
+appears in `trained_on` (`hoppath eval … --selection rerank --rerank-model <dir>`).
 
 Cost: 1 epoch over ~48k queries (~630k sampled rows) is ~3 h with GPU
 acceleration. Smoke-test the whole path first with `--max-queries 300
@@ -107,13 +107,13 @@ acceleration. Smoke-test the whole path first with `--max-queries 300
 ## 3. Bundle for distribution (ADR 0012)
 
 ```
-uv run python training/bundle_artifact.py $HOPTRACE_DATA_DIR/models/hoptrace-rerank-minilm-l6
+uv run python training/bundle_artifact.py $HOPPATH_DATA_DIR/models/hoppath-rerank-minilm-l6
 ```
 
 Copies `model_int8.onnx`, `tokenizer.json` and `manifest.json` into
-`models/hoptrace-rerank-minilm-l6/` in the repository (committed; ~24 MB)
+`models/hoppath-rerank-minilm-l6/` in the repository (committed; ~24 MB)
 and prints the `ModelSpec` registry entry with every file's sha256 for
-`src/hoptrace/rerank.py`. `model.onnx` (fp32) is not committed: attach
+`src/hoppath/rerank.py`. `model.onnx` (fp32) is not committed: attach
 it — and, for wheel installs, the three bundled files — to the GitHub
 Release the registry URLs name. A clone then runs `--rerank` offline on
 the int8 graph; `--rerank-precision fp32` downloads the release asset

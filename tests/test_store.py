@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.chunker import Chunk
-from hoptrace.mentions import Mention
-from hoptrace.store import MAX_TF, Store, StoreWriter, pack_postings, unpack_postings
+from hoppath.chunker import Chunk
+from hoppath.mentions import Mention
+from hoppath.store import MAX_TF, Store, StoreWriter, pack_postings, unpack_postings
 
 
 def test_pack_roundtrip() -> None:

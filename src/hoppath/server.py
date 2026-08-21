@@ -13,36 +13,36 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
-from hoptrace.bm25 import Bm25
-from hoptrace.bracket import run_bracket
-from hoptrace.config import (
+from hoppath.bm25 import Bm25
+from hoppath.bracket import run_bracket
+from hoppath.config import (
     ChunkConfig,
     ExtractorConfig,
     RetrievalConfig,
     corpus_path,
     list_corpora,
 )
-from hoptrace.ingest import ingest_path
-from hoptrace.provenance import Evidence
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
-from hoptrace.tokenize import ANALYZERS, analyze
+from hoppath.ingest import ingest_path
+from hoppath.provenance import Evidence
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
+from hoppath.tokenize import ANALYZERS, analyze
 
 
 def _package_version() -> str:
     try:
-        return version("hoptrace")
+        return version("hoppath")
     except PackageNotFoundError:  # source checkout that was never installed
-        from hoptrace import __version__
+        from hoppath import __version__
 
         return __version__
 
 
 mcp = MCPServer(
-    "hoptrace",
+    "hoppath",
     version=_package_version(),
     instructions=(
-        "HopTrace is a deterministic multi-hop retrieval engine. Call `retrieve`"
+        "HopPath is a deterministic multi-hop retrieval engine. Call `retrieve`"
         " to get evidence chunks with hop paths; each chunk names its source"
         " file (chunk.doc, relative to source_root) and the path string can be"
         " cited verbatim, e.g. 'according to people/marek-sosna.md (chunk#12),"
@@ -65,7 +65,7 @@ class _CachedCorpus:
     store: Store
     retriever: Retriever
     mtime_ns: int
-    #: HOPTRACE_DATA_DIR is re-read per call; guards against an mtime coincidence across dirs.
+    #: HOPPATH_DATA_DIR is re-read per call; guards against an mtime coincidence across dirs.
     path: Path
     #: per (model, precision); an ONNX session is too expensive to rebuild per request
     rerank_retrievers: dict[tuple[str | None, str | None], Retriever] = field(default_factory=dict)
@@ -246,8 +246,8 @@ def bracket_impl(corpus_id: str, n_questions: int = 100) -> dict[str, Any]:
     report = run_bracket(cached.store, RetrievalConfig(), n_questions=n_questions)
     payload = {
         "floor": asdict(report.rows[0]),
-        "hoptrace_1hop": asdict(report.rows[1]),
-        "hoptrace_2hop": asdict(report.rows[2]),
+        "hoppath_1hop": asdict(report.rows[1]),
+        "hoppath_2hop": asdict(report.rows[2]),
         "oracle": report.oracle,
         "multihop_fraction": report.multihop_fraction,
         "miss_breakdown": report.miss_breakdown,
@@ -299,7 +299,7 @@ def retrieve(
     carries a human-readable `path` you can cite verbatim, plus per-stage
     score components. hops=0 is plain BM25. rerank=true rescores top candidates
     with the bundled path-aware cross-encoder (requires the rerank extra;
-    set HOPTRACE_RERANK_MODEL to point at another artifact)."""
+    set HOPPATH_RERANK_MODEL to point at another artifact)."""
     return retrieve_impl(query, corpus_id, hops, k, rerank)
 
 
@@ -313,7 +313,7 @@ def explain(chunk_id: int, corpus_id: str, query: str | None = None) -> dict[str
 
 @mcp.tool()
 def bracket(corpus_id: str, n_questions: int = 100) -> dict[str, Any]:
-    """Measure this corpus: BM25 floor vs HopTrace at hop 1/2 on a generated
+    """Measure this corpus: BM25 floor vs HopPath at hop 1/2 on a generated
     self-benchmark, the multi-hop fraction, and where misses happen. The
     report includes its own caveat — read it."""
     return bracket_impl(corpus_id, n_questions)

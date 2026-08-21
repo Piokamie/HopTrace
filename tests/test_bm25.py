@@ -2,9 +2,9 @@ import math
 
 import pytest
 
-from hoptrace.bm25 import Bm25, Bm25Vector, idf
-from hoptrace.chunker import Chunk
-from hoptrace.store import Store, StoreWriter
+from hoppath.bm25 import Bm25, Bm25Vector, idf
+from hoppath.chunker import Chunk
+from hoppath.store import Store, StoreWriter
 
 K1 = 1.5
 B = 0.75

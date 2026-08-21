@@ -1,7 +1,7 @@
 import pytest
 
-from hoptrace.porter import stem
-from hoptrace.tokenize import analyze, tokenize
+from hoppath.porter import stem
+from hoppath.tokenize import analyze, tokenize
 
 # Classic pairs from Porter's paper and the reference implementation's
 # vocabulary. If any of these drift, the BM25 baseline gate is at risk.

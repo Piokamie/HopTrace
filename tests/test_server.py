@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-import hoptrace.server as server
+import hoppath.server as server
 
 DOCS = {
     "people.md": "# People\n\nAnna Nowak reports to Kowalski. We asked Anna about the atrium.",
@@ -14,7 +14,7 @@ DOCS = {
 
 @pytest.fixture(autouse=True)
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     # the registry caches per corpus id across tests; isolate it
     monkeypatch.setattr(server, "_registry", server.CorpusRegistry())
     src = tmp_path / "docs"
@@ -96,7 +96,7 @@ def test_bracket_tool(data_dir: Path) -> None:
     server.ingest_impl(str(data_dir), "office")
     payload = server.bracket_impl("office", n_questions=6)
     assert payload["floor"]["system"] == "bm25-floor"
-    assert payload["hoptrace_2hop"]["system"] == "hoptrace@2hop"
+    assert payload["hoppath_2hop"]["system"] == "hoppath@2hop"
     assert 0.0 <= payload["multihop_fraction"] <= 1.0
     assert "never as cross-system evidence" in payload["caveat"]
 

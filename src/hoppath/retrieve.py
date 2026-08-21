@@ -14,14 +14,14 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from hoptrace.bm25 import Bm25, Bm25Vector
-from hoptrace.config import RetrievalConfig
-from hoptrace.expand import Candidate, Expander, bridge_strength
-from hoptrace.mentions import QUERY_TRUST, MentionExtractor
-from hoptrace.provenance import Evidence, HopEdge, HopPath, RetrievalResult, ScoreBreakdown
-from hoptrace.rerank import PairScorer, default_scorer, rerank_select, window_size
-from hoptrace.score import Selected, candidate_features, greedy_select, interleave
-from hoptrace.store import ChunkRow, Store
+from hoppath.bm25 import Bm25, Bm25Vector
+from hoppath.config import RetrievalConfig
+from hoppath.expand import Candidate, Expander, bridge_strength
+from hoppath.mentions import QUERY_TRUST, MentionExtractor
+from hoppath.provenance import Evidence, HopEdge, HopPath, RetrievalResult, ScoreBreakdown
+from hoppath.rerank import PairScorer, default_scorer, rerank_select, window_size
+from hoppath.score import Selected, candidate_features, greedy_select, interleave
+from hoppath.store import ChunkRow, Store
 
 
 @dataclass
@@ -71,7 +71,7 @@ class Retriever:
     def retrieve(
         self, query: str, hops: int | None = None, k: int | None = None
     ) -> RetrievalResult:
-        from hoptrace.tokenize import analyze
+        from hoppath.tokenize import analyze
 
         cfg_hops = self._cfg.hops if hops is None else hops
         cfg_k = self._cfg.k if k is None else k
@@ -192,7 +192,7 @@ class Retriever:
     def _candidates(self, query: str, hops: int, k: int) -> _CandidateStage:
         """Everything before selection. ``k`` sets the BM25 seed depth, so a
         caller wanting inference's pool must pass inference's k."""
-        from hoptrace.tokenize import analyze
+        from hoppath.tokenize import analyze
 
         notes: list[str] = []
         mentions = self._extractor.extract(query, corpus_caps=QUERY_TRUST)

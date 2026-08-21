@@ -5,14 +5,14 @@ from dataclasses import replace
 
 import pytest
 
-from hoptrace.config import ChunkConfig, RetrievalConfig, models_dir
-from hoptrace.expand import Candidate
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.provenance import HopEdge, HopPath
-from hoptrace.rerank import PARENT_SNIPPET_CHARS, rerank_select, serialize_pair
-from hoptrace.retrieve import Retriever
-from hoptrace.score import interleave
-from hoptrace.store import Store
+from hoppath.config import ChunkConfig, RetrievalConfig, models_dir
+from hoppath.expand import Candidate
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.provenance import HopEdge, HopPath
+from hoppath.rerank import PARENT_SNIPPET_CHARS, rerank_select, serialize_pair
+from hoppath.retrieve import Retriever
+from hoppath.score import interleave
+from hoppath.store import Store
 
 
 class RecordingScorer:
@@ -224,7 +224,7 @@ def test_builder_refuses_2wiki_holdout() -> None:
 
 def test_builder_rows_are_exactly_what_inference_scores(store: Store) -> None:
     """Builder rows match what a rerank Retriever with inference's k hands the scorer."""
-    from hoptrace.eval.harness import QueryGold
+    from hoppath.eval.harness import QueryGold
 
     builder = _load_builder()
     chunk_ids = [ids[0] for ids in store.chunks_by_doc_path([d.path for d in DOCS]).values()]
@@ -385,7 +385,7 @@ def _stub_artifact(model_dir, trained_on, holdout=("2wiki",), **extra):
     """Fine-tuned-artifact stub: graphs, tokenizer, and a manifest whose hashes match them."""
     import json
 
-    from hoptrace.rerank import ResolvedModel, sha256_of
+    from hoppath.rerank import ResolvedModel, sha256_of
 
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "model.onnx").write_bytes(b"stub-fp32")
@@ -411,7 +411,7 @@ TRAIN_ONLY = [{"dataset": "musique", "split": "train"}, {"dataset": "hotpotqa", 
 
 
 def test_training_wall_passes_for_untrained_split(tmp_path) -> None:
-    from hoptrace.eval.harness import check_training_wall
+    from hoppath.eval.harness import check_training_wall
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY)
     note = check_training_wall("musique", model)
@@ -422,7 +422,7 @@ def test_training_wall_passes_for_untrained_split(tmp_path) -> None:
 
 
 def test_training_wall_refuses_evaluated_split(tmp_path) -> None:
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, [{"dataset": "musique", "split": "dev"}])
     with pytest.raises(TrainingWallError, match="musique/dev"):
@@ -432,7 +432,7 @@ def test_training_wall_refuses_evaluated_split(tmp_path) -> None:
 @pytest.mark.parametrize("name", ["2wiki", "2WikiMultihopQA", "hipporag-2wiki", "2wiki-train"])
 def test_training_wall_refuses_holdout_in_training(tmp_path, name: str) -> None:
     """Any spelling of the holdout trips the wall; the manifest is untrusted data."""
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, [{"dataset": name, "split": "train"}])
     with pytest.raises(TrainingWallError, match="declared holdout"):
@@ -441,7 +441,7 @@ def test_training_wall_refuses_holdout_in_training(tmp_path, name: str) -> None:
 
 def test_training_wall_refuses_holdout_even_for_other_datasets(tmp_path) -> None:
     """A holdout in training is refused whatever dataset is evaluated."""
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, [{"dataset": "2wiki", "split": "train"}])
     with pytest.raises(TrainingWallError, match="declared holdout"):
@@ -449,7 +449,7 @@ def test_training_wall_refuses_holdout_even_for_other_datasets(tmp_path) -> None
 
 
 def test_training_wall_refuses_empty_or_malformed_trained_on(tmp_path) -> None:
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     with pytest.raises(TrainingWallError, match="no trained_on"):
         check_training_wall("musique", _stub_artifact(tmp_path / "a", []))
@@ -460,7 +460,7 @@ def test_training_wall_refuses_empty_or_malformed_trained_on(tmp_path) -> None:
 
 
 def test_training_wall_refuses_unmapped_dataset(tmp_path) -> None:
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY)
     with pytest.raises(TrainingWallError, match="no training-wall mapping"):
@@ -469,13 +469,13 @@ def test_training_wall_refuses_unmapped_dataset(tmp_path) -> None:
 
 def test_training_wall_flags_unexcluded_model(tmp_path) -> None:
     """Kept-gold models pass the wall; the report has to flag them."""
-    from hoptrace.eval.harness import check_training_wall
+    from hoppath.eval.harness import check_training_wall
 
     assert "NOT PUBLISHABLE" in check_training_wall("musique", _stub_artifact(tmp_path, TRAIN_ONLY))
 
 
 def test_training_wall_reports_exclusion_when_applied(tmp_path) -> None:
-    from hoptrace.eval.harness import check_training_wall
+    from hoppath.eval.harness import check_training_wall
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY, exclusion={"eval_gold_passages_excluded": 3795})
     note = check_training_wall("musique", model)
@@ -484,8 +484,8 @@ def test_training_wall_reports_exclusion_when_applied(tmp_path) -> None:
 
 
 def test_training_wall_refuses_missing_manifest(tmp_path) -> None:
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
-    from hoptrace.rerank import ResolvedModel
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.rerank import ResolvedModel
 
     (tmp_path / "model.onnx").write_bytes(b"stub")
     (tmp_path / "tokenizer.json").write_bytes(b"{}")
@@ -495,7 +495,7 @@ def test_training_wall_refuses_missing_manifest(tmp_path) -> None:
 
 def test_training_wall_binds_manifest_to_files(tmp_path) -> None:
     """A manifest beside a graph it does not describe fails the wall."""
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY)
     (tmp_path / "model.onnx").write_bytes(b"a different graph")
@@ -506,8 +506,8 @@ def test_training_wall_binds_manifest_to_files(tmp_path) -> None:
 def test_training_wall_requires_file_hashes_and_the_scored_graph(tmp_path) -> None:
     import json
 
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
-    from hoptrace.rerank import ResolvedModel
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.rerank import ResolvedModel
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY)
     manifest = json.loads((tmp_path / "manifest.json").read_text())
@@ -522,7 +522,7 @@ def test_training_wall_requires_file_hashes_and_the_scored_graph(tmp_path) -> No
 
 
 def test_training_wall_refuses_dirty_trainer_unless_allowed(tmp_path) -> None:
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     model = _stub_artifact(tmp_path, TRAIN_ONLY, trainer_commit="abc123-dirty")
     with pytest.raises(TrainingWallError, match="dirty trainer tree"):
@@ -534,8 +534,8 @@ def test_training_wall_refuses_dirty_trainer_unless_allowed(tmp_path) -> None:
 def test_zero_shot_exemption_only_for_the_registry_base(tmp_path, monkeypatch) -> None:
     """Exemption follows the resolved registry entry, not the directory name;
     a registry location with a manifest is fine-tuned."""
-    from hoptrace import rerank
-    from hoptrace.eval.harness import TrainingWallError, check_training_wall
+    from hoppath import rerank
+    from hoppath.eval.harness import TrainingWallError, check_training_wall
 
     bundled = tmp_path / "models"
     base_dir = bundled / rerank.ZERO_SHOT_MODEL
@@ -577,65 +577,65 @@ def test_zero_shot_exemption_only_for_the_registry_base(tmp_path, monkeypatch) -
         check_training_wall("musique", resolved)
 
 
-def test_evaluate_hoptrace_runs_wall_before_scoring(store: Store, tmp_path) -> None:
+def test_evaluate_hoppath_runs_wall_before_scoring(store: Store, tmp_path) -> None:
     """A trained-on-dev manifest stops the run before any query is scored."""
-    from hoptrace.eval.harness import QueryGold, TrainingWallError, evaluate_hoptrace
+    from hoppath.eval.harness import QueryGold, TrainingWallError, evaluate_hoppath
 
     _stub_artifact(tmp_path, [{"dataset": "musique", "split": "dev"}])
     cfg = replace(_rerank_cfg(), rerank_model=str(tmp_path))
     gold = [QueryGold(qid="q", text="Where does Kowalski sit?", gold=frozenset({1}))]
     with pytest.raises(TrainingWallError):
-        evaluate_hoptrace(store, gold, "musique", "pooled-dev", hops=2, cfg=cfg, ks=(2,))
+        evaluate_hoppath(store, gold, "musique", "pooled-dev", hops=2, cfg=cfg, ks=(2,))
 
 
-def test_evaluate_hoptrace_env_override_hits_the_wall(
+def test_evaluate_hoppath_env_override_hits_the_wall(
     store: Store, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """rerank_model=None resolves $HOPTRACE_RERANK_MODEL and checks it."""
-    from hoptrace.eval.harness import QueryGold, TrainingWallError, evaluate_hoptrace
+    """rerank_model=None resolves $HOPPATH_RERANK_MODEL and checks it."""
+    from hoppath.eval.harness import QueryGold, TrainingWallError, evaluate_hoppath
 
     _stub_artifact(tmp_path, [{"dataset": "musique", "split": "dev"}])
-    monkeypatch.setenv("HOPTRACE_RERANK_MODEL", str(tmp_path))
+    monkeypatch.setenv("HOPPATH_RERANK_MODEL", str(tmp_path))
     gold = [QueryGold(qid="q", text="Where does Kowalski sit?", gold=frozenset({1}))]
     with pytest.raises(TrainingWallError, match="musique/dev"):
-        evaluate_hoptrace(store, gold, "musique", "pooled-dev", hops=2, cfg=_rerank_cfg(), ks=(2,))
+        evaluate_hoppath(store, gold, "musique", "pooled-dev", hops=2, cfg=_rerank_cfg(), ks=(2,))
 
 
-def test_evaluate_hoptrace_labels_rerank_system(
+def test_evaluate_hoppath_labels_rerank_system(
     store: Store, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """System label/notes for a fine-tuned model; default_scorer patched so no onnx is needed."""
-    import hoptrace.retrieve as retrieve_mod
-    from hoptrace.eval.harness import QueryGold, evaluate_hoptrace
+    import hoppath.retrieve as retrieve_mod
+    from hoppath.eval.harness import QueryGold, evaluate_hoppath
 
-    monkeypatch.delenv("HOPTRACE_RERANK_MODEL", raising=False)
+    monkeypatch.delenv("HOPPATH_RERANK_MODEL", raising=False)
     _stub_artifact(tmp_path, TRAIN_ONLY, exclusion={"eval_gold_passages_excluded": 1})
     monkeypatch.setattr(
         retrieve_mod, "default_scorer", lambda cfg: RecordingScorer(lambda a, b: float(len(b)))
     )
     gold = [QueryGold(qid="q", text="Where does Kowalski sit?", gold=frozenset({1}))]
     cfg = replace(_rerank_cfg(), rerank_model=str(tmp_path), rerank_precision="int8")
-    report = evaluate_hoptrace(store, gold, "musique", "pooled-dev", hops=2, cfg=cfg, ks=(2,))
-    assert report.system == "hoptrace@2hop+rerank"
+    report = evaluate_hoppath(store, gold, "musique", "pooled-dev", hops=2, cfg=cfg, ks=(2,))
+    assert report.system == "hoppath@2hop+rerank"
     assert any("wall verified for musique/dev" in n and "(int8)" in n for n in report.notes)
     assert any("model=" in n and "(int8)" in n for n in report.notes)
     assert "ONNX 4 intra-op threads" in report.latency.conditions
 
 
 def test_models_dir_under_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", "/tmp/ht-test")
+    monkeypatch.setenv("HOPPATH_DATA_DIR", "/tmp/ht-test")
     assert str(models_dir()) == "/tmp/ht-test/models"
 
 
 def test_resolve_model_rejects_unknown_name() -> None:
-    from hoptrace.rerank import resolve_model
+    from hoppath.rerank import resolve_model
 
     with pytest.raises(RuntimeError, match="unknown rerank model"):
         resolve_model("no-such-model")
 
 
 def test_resolve_model_rejects_incomplete_directory(tmp_path) -> None:
-    from hoptrace.rerank import resolve_model
+    from hoppath.rerank import resolve_model
 
     (tmp_path / "model.onnx").write_bytes(b"stub")
     with pytest.raises(RuntimeError, match=r"tokenizer\.json"):
@@ -643,7 +643,7 @@ def test_resolve_model_rejects_incomplete_directory(tmp_path) -> None:
 
 
 def test_resolve_model_precision_follows_the_artifact(tmp_path) -> None:
-    from hoptrace.rerank import resolve_model
+    from hoppath.rerank import resolve_model
 
     (tmp_path / "tokenizer.json").write_bytes(b"{}")
     (tmp_path / "model_int8.onnx").write_bytes(b"stub")
@@ -654,7 +654,7 @@ def test_resolve_model_precision_follows_the_artifact(tmp_path) -> None:
 
 
 def test_resolve_model_missing_graph_is_a_clear_error(tmp_path) -> None:
-    from hoptrace.rerank import resolve_model
+    from hoppath.rerank import resolve_model
 
     (tmp_path / "tokenizer.json").write_bytes(b"{}")
     (tmp_path / "model.onnx").write_bytes(b"stub")
@@ -666,9 +666,9 @@ def test_resolve_model_missing_graph_is_a_clear_error(tmp_path) -> None:
 
 def test_registry_refuses_unpinned_downloads(tmp_path, monkeypatch) -> None:
     """An unpinned registry entry is neither fetched nor trusted from a same-named data dir."""
-    from hoptrace import rerank
+    from hoppath import rerank
 
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(rerank, "BUNDLED_MODELS_DIR", tmp_path / "no-bundle")
     spec = rerank.ModelSpec(
         name="pending",
@@ -690,9 +690,9 @@ def test_registry_refuses_unpinned_downloads(tmp_path, monkeypatch) -> None:
 
 
 def test_registry_prefers_bundled_copy_and_verifies_it(tmp_path, monkeypatch) -> None:
-    from hoptrace import rerank
+    from hoppath import rerank
 
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     bundled = tmp_path / "models" / "bundled"
     bundled.mkdir(parents=True)
     (bundled / "model_int8.onnx").write_bytes(b"int8")
@@ -723,9 +723,9 @@ def test_registry_prefers_bundled_copy_and_verifies_it(tmp_path, monkeypatch) ->
 def test_registry_copies_bundled_files_when_a_download_is_needed(tmp_path, monkeypatch) -> None:
     """fp32 requested, only int8 bundled: shared files copied, the unreachable download
     names its URL, nothing half-written stays."""
-    from hoptrace import rerank
+    from hoppath import rerank
 
-    monkeypatch.setenv("HOPTRACE_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HOPPATH_DATA_DIR", str(tmp_path / "data"))
     bundled = tmp_path / "models" / "bundled"
     bundled.mkdir(parents=True)
     (bundled / "model_int8.onnx").write_bytes(b"int8")
@@ -756,7 +756,7 @@ def test_onnx_cross_encoder_real_model() -> None:
     """Integration: needs the rerank extra and a downloaded base model; usually skips."""
     pytest.importorskip("onnxruntime")
     pytest.importorskip("tokenizers")
-    from hoptrace.rerank import ZERO_SHOT_MODEL, OnnxCrossEncoder
+    from hoppath.rerank import ZERO_SHOT_MODEL, OnnxCrossEncoder
 
     model_dir = models_dir() / ZERO_SHOT_MODEL
     if not (model_dir / "model.onnx").is_file():

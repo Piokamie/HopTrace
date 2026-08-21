@@ -30,14 +30,14 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
-from hoptrace.config import RetrievalConfig, data_dir
-from hoptrace.eval.adapters import load_beir_qrels, load_beir_queries, load_musique
-from hoptrace.eval.corpus_build import build_pooled_index
-from hoptrace.eval.datasets import EVAL_B, EVAL_K1, ensure_dataset
-from hoptrace.eval.harness import QueryGold, beir_query_gold, pooled_query_gold
-from hoptrace.rerank import serialize_pair
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
+from hoppath.config import RetrievalConfig, data_dir
+from hoppath.eval.adapters import load_beir_qrels, load_beir_queries, load_musique
+from hoppath.eval.corpus_build import build_pooled_index
+from hoppath.eval.datasets import EVAL_B, EVAL_K1, ensure_dataset
+from hoppath.eval.harness import QueryGold, beir_query_gold, pooled_query_gold
+from hoppath.rerank import serialize_pair
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
 
 #: Rescoring budget at inference (``RetrievalConfig.rerank_top_n``).
 TOP_N = 50
@@ -70,8 +70,8 @@ def key_of(text: str) -> str:
 
 def eval_gold_keys() -> set[str]:
     """Keys of every gold passage in every evaluation set."""
-    from hoptrace.eval.adapters import load_hotpot_format, load_musique_json
-    from hoptrace.eval.corpus_build import flat_text
+    from hoppath.eval.adapters import load_hotpot_format, load_musique_json
+    from hoppath.eval.corpus_build import flat_text
 
     gold: set[str] = set()
     for name in EVAL_GOLD_SOURCES:
@@ -237,7 +237,7 @@ def build_hotpotqa(out_dir: Path, limit: int | None, gold_keys: set[str] | None)
     if not index_path.is_file():
         raise SystemExit(
             f"no BEIR index at {index_path}: build it first via"
-            " `hoptrace eval --dataset beir-hotpotqa` (hours-scale)"
+            " `hoppath eval --dataset beir-hotpotqa` (hours-scale)"
         )
     qrels_path = dataset_dir / "qrels" / "train.tsv"
     queries = load_beir_queries(dataset_dir / "queries.jsonl")
@@ -350,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--limit-musique", type=int, default=None)
     parser.add_argument(
-        "--out", type=Path, default=None, help="default: $HOPTRACE_DATA_DIR/training"
+        "--out", type=Path, default=None, help="default: $HOPPATH_DATA_DIR/training"
     )
     parser.add_argument(
         "--keep-eval-gold",

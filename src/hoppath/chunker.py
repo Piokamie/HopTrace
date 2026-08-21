@@ -10,8 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from hoptrace.config import ChunkConfig
-from hoptrace.tokenize import tokenize
+from hoppath.config import ChunkConfig
+from hoppath.tokenize import tokenize
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from hoptrace.porter import stem
+from hoppath.porter import stem
 
 _WORD_RE = re.compile(r"\w+")
 

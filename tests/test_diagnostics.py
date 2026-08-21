@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.config import ChunkConfig, RetrievalConfig
-from hoptrace.eval.diagnostics import (
+from hoppath.config import ChunkConfig, RetrievalConfig
+from hoppath.eval.diagnostics import (
     DisplacementAudit,
     MissBreakdown,
     QuestionOutcome,
@@ -15,9 +15,9 @@ from hoptrace.eval.diagnostics import (
     question_stratum,
     stratify,
 )
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
 
 pytest.importorskip("numpy")
 
@@ -116,7 +116,7 @@ def test_stratify_matches_calibrate() -> None:
 
 
 def test_displacement_audit() -> None:
-    from hoptrace.provenance import (
+    from hoppath.provenance import (
         Evidence,
         HopEdge,
         HopPath,

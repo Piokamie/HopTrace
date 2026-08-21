@@ -14,8 +14,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from hoptrace.config import RetrievalConfig, data_dir
-from hoptrace.eval.adapters import (
+from hoppath.config import RetrievalConfig, data_dir
+from hoppath.eval.adapters import (
     EvalQuestion,
     load_beir_qrels,
     load_beir_queries,
@@ -24,19 +24,19 @@ from hoptrace.eval.adapters import (
     load_musique,
     load_musique_json,
 )
-from hoptrace.eval.corpus_build import (
+from hoppath.eval.corpus_build import (
     build_beir_index,
     build_explicit_index,
     build_pooled_index,
 )
-from hoptrace.eval.datasets import (
+from hoppath.eval.datasets import (
     BEIR_HOTPOTQA_BASELINES,
     EVAL_B,
     EVAL_K1,
     GATE_TOLERANCE,
     ensure_dataset,
 )
-from hoptrace.eval.diagnostics import (
+from hoppath.eval.diagnostics import (
     ANSWER_K,
     DIAGNOSTIC_K,
     DisplacementAudit,
@@ -46,24 +46,24 @@ from hoptrace.eval.diagnostics import (
     pool_precision,
     stratify,
 )
-from hoptrace.eval.harness import (
+from hoppath.eval.harness import (
     FloorReport,
     QueryGold,
     beir_query_gold,
     evaluate_distractor_floor,
     evaluate_floor,
-    evaluate_hoptrace,
+    evaluate_hoppath,
     floor_outcomes,
     pooled_query_gold,
     write_report,
 )
-from hoptrace.rerank import PRECISIONS
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store, ensure_entity_stats
+from hoppath.rerank import PRECISIONS
+from hoppath.retrieve import Retriever
+from hoppath.store import Store, ensure_entity_stats
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="hoptrace", description="HopTrace retrieval engine")
+    parser = argparse.ArgumentParser(prog="hoppath", description="HopPath retrieval engine")
     sub = parser.add_subparsers(dest="command", required=True)
 
     ing = sub.add_parser("ingest", help="ingest text/markdown files into a corpus")
@@ -87,7 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ret.add_argument(
         "--rerank-model",
         default=None,
-        help="local model directory or registry name (default: $HOPTRACE_RERANK_MODEL,"
+        help="local model directory or registry name (default: $HOPPATH_RERANK_MODEL,"
         " else the bundled fine-tuned model; ms-marco-minilm-l6-v2 is the zero-shot base)",
     )
     ret.add_argument(
@@ -160,7 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--rerank-model",
         default=None,
         help="rerank model: local directory or registry name (default:"
-        " $HOPTRACE_RERANK_MODEL, else the bundled fine-tuned model;"
+        " $HOPPATH_RERANK_MODEL, else the bundled fine-tuned model;"
         " ms-marco-minilm-l6-v2 is the zero-shot control). Fine-tuned models must"
         " carry a manifest; the training-data wall is checked",
     )
@@ -262,11 +262,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _progress(message: str) -> None:
-    print(f"[hoptrace] {message}", file=sys.stderr, flush=True)
+    print(f"[hoppath] {message}", file=sys.stderr, flush=True)
 
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
-    from hoptrace.server import ingest_impl
+    from hoppath.server import ingest_impl
 
     config: dict[str, object] = {"analyzer": args.analyzer, "ner": args.ner}
     if args.target_tokens is not None:
@@ -285,7 +285,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
 
 
 def _cmd_retrieve(args: argparse.Namespace) -> int:
-    from hoptrace.server import retrieve_impl
+    from hoppath.server import retrieve_impl
 
     payload = retrieve_impl(
         args.query,
@@ -325,7 +325,7 @@ def _cmd_retrieve(args: argparse.Namespace) -> int:
 
 
 def _cmd_explain(args: argparse.Namespace) -> int:
-    from hoptrace.server import explain_impl
+    from hoppath.server import explain_impl
 
     payload = explain_impl(args.chunk_id, args.corpus_id, args.query)
     if args.as_json:
@@ -351,13 +351,13 @@ def _cmd_explain(args: argparse.Namespace) -> int:
 
 
 def _cmd_bracket(args: argparse.Namespace) -> int:
-    from hoptrace.bracket import run_bracket
-    from hoptrace.config import corpus_path
-    from hoptrace.store import Store
+    from hoppath.bracket import run_bracket
+    from hoppath.config import corpus_path
+    from hoppath.store import Store
 
     path = corpus_path(args.corpus_id)
     if not path.is_file():
-        from hoptrace.config import list_corpora
+        from hoppath.config import list_corpora
 
         print(
             f"error: no corpus {args.corpus_id!r}; available:"
@@ -375,11 +375,11 @@ def _cmd_bracket(args: argparse.Namespace) -> int:
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
-    from hoptrace.server import main as serve_main
+    from hoppath.server import main as serve_main
 
     if args.http:
         print(
-            f"hoptrace MCP server on http://{args.host}:{args.port}/mcp (no auth)",
+            f"hoppath MCP server on http://{args.host}:{args.port}/mcp (no auth)",
             file=sys.stderr,
         )
     serve_main("streamable-http" if args.http else "stdio", args.host, args.port)
@@ -503,7 +503,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
                 displacement = DisplacementAudit(
                     dataset=args.dataset, hops=args.hops, k=DIAGNOSTIC_K
                 )
-            report = evaluate_hoptrace(
+            report = evaluate_hoppath(
                 store,
                 query_gold,
                 args.dataset,

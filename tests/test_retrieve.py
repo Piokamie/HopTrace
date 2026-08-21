@@ -1,9 +1,9 @@
 import pytest
 
-from hoptrace.config import ChunkConfig, RetrievalConfig
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
+from hoppath.config import ChunkConfig, RetrievalConfig
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
 
 # The DESIGN.md worked example; p1 ("occupies", not "sits") has no lexical
 # overlap with the query and is reachable only through the kowalski bridge.

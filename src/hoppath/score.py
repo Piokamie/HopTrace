@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from hoptrace.expand import Candidate
+from hoppath.expand import Candidate
 
 
 def interleave(pool: dict[int, Candidate], k: int) -> list[Candidate]:

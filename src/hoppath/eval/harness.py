@@ -17,22 +17,22 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from hoptrace.bm25 import Bm25, Bm25Vector
-from hoptrace.config import RetrievalConfig
-from hoptrace.eval.adapters import EvalQuestion
-from hoptrace.eval.corpus_build import build_pooled_index, build_question_index, load_beir_answers
-from hoptrace.eval.datasets import EVAL_B, EVAL_K1
-from hoptrace.eval.diagnostics import (
+from hoppath.bm25 import Bm25, Bm25Vector
+from hoppath.config import RetrievalConfig
+from hoppath.eval.adapters import EvalQuestion
+from hoppath.eval.corpus_build import build_pooled_index, build_question_index, load_beir_answers
+from hoppath.eval.datasets import EVAL_B, EVAL_K1
+from hoppath.eval.diagnostics import (
     DisplacementAudit,
     MissBreakdown,
     QuestionOutcome,
     audit_displacement,
     classify_misses,
 )
-from hoptrace.rerank import ResolvedModel, resolve_model, sha256_of, window_size
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
-from hoptrace.tokenize import analyze
+from hoppath.rerank import ResolvedModel, resolve_model, sha256_of, window_size
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
+from hoppath.tokenize import analyze
 
 
 def _check_analyzer(store: Store, analyzer: str) -> None:
@@ -563,7 +563,7 @@ def pooled_query_gold(
     ]
 
 
-def evaluate_hoptrace(
+def evaluate_hoppath(
     store: Store,
     query_gold: Sequence[QueryGold],
     dataset: str,
@@ -578,13 +578,13 @@ def evaluate_hoptrace(
     displacement: DisplacementAudit | None = None,
     allow_dirty: bool = False,
 ) -> FloorReport:
-    """Budget-matched HopTrace run at a given hop count over prebuilt gold."""
+    """Budget-matched HopPath run at a given hop count over prebuilt gold."""
     base = cfg or RetrievalConfig()
     run_cfg = replace(base, hops=hops, k=max(ks))
     wall_notes: list[str] = []
     resolved: ResolvedModel | None = None
     if run_cfg.selection == "rerank":
-        # resolve here so an $HOPTRACE_RERANK_MODEL override cannot inherit
+        # resolve here so an $HOPPATH_RERANK_MODEL override cannot inherit
         # the base model's exemption
         resolved = resolve_model(run_cfg.rerank_model, run_cfg.rerank_precision)
         wall_notes.append(check_training_wall(dataset, resolved, allow_dirty=allow_dirty))
@@ -653,7 +653,7 @@ def evaluate_hoptrace(
     return FloorReport(
         dataset=dataset,
         setting=setting,
-        system=f"hoptrace@{hops}hop{'+rerank' if is_rerank else ''}",
+        system=f"hoppath@{hops}hop{'+rerank' if is_rerank else ''}",
         n_queries=len(query_gold),
         n_chunks=store.n_chunks,
         analyzer=store.meta("analyzer") or "simple",

@@ -13,8 +13,8 @@ build/
 .mypy_cache/
 .ruff_cache/
 
-# HopTrace local data (corpora, downloaded datasets)
-.hoptrace/
+# HopPath local data (corpora, downloaded datasets)
+.hoppath/
 # bundled reranker: the torch checkpoint never ships, only the ONNX graphs
 models/**/hf/
 

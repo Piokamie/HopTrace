@@ -1,5 +1,5 @@
 [project]
-name = "hoptrace"
+name = "hoppath"
 version = "0.1.0"
 description = "Deterministic multi-hop retrieval engine with a measurement harness, exposed over MCP"
 readme = "README.md"
@@ -8,7 +8,7 @@ authors = [
     { name = "Piotr Kamieniecki", email = "piokamie@gmail.com" }
 ]
 requires-python = ">=3.10"
-urls = { Homepage = "https://github.com/Piokamie/HopTrace", Repository = "https://github.com/Piokamie/HopTrace", Changelog = "https://github.com/Piokamie/HopTrace/blob/main/CHANGELOG.md" }
+urls = { Homepage = "https://github.com/Piokamie/HopPath", Repository = "https://github.com/Piokamie/HopPath", Changelog = "https://github.com/Piokamie/HopPath/blob/main/CHANGELOG.md" }
 dependencies = [
     "mcp>=2.0.0",
 ]
@@ -28,7 +28,7 @@ rerank = [
 ]
 
 [project.scripts]
-hoptrace = "hoptrace.cli:main"
+hoppath = "hoppath.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8.24,<0.9.0"]

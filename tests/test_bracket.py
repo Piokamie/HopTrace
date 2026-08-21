@@ -3,10 +3,10 @@ import json
 import pytest
 from test_bench import DOCS
 
-from hoptrace.bracket import CAVEAT, run_bracket
-from hoptrace.config import ChunkConfig, RetrievalConfig
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.store import Store
+from hoppath.bracket import CAVEAT, run_bracket
+from hoppath.config import ChunkConfig, RetrievalConfig
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.store import Store
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def report(store: Store):
 
 
 def test_rows_and_counts(report) -> None:
-    assert [row.system for row in report.rows] == ["bm25-floor", "hoptrace@1hop", "hoptrace@2hop"]
+    assert [row.system for row in report.rows] == ["bm25-floor", "hoppath@1hop", "hoppath@2hop"]
     assert report.n_questions == report.n_single_hop + report.n_multi_hop
     assert report.n_multi_hop > 0
 
@@ -51,7 +51,7 @@ def test_caveat_embedded_everywhere(report) -> None:
 def test_report_text_shape(report) -> None:
     text = report.to_text()
     assert "bm25-floor" in text
-    assert "hoptrace@2hop" in text
+    assert "hoppath@2hop" in text
     assert "multihop_fraction" in text
     assert "misses at 2hop" in text
 
@@ -71,16 +71,16 @@ def test_empty_corpus_raises() -> None:
 
 
 def test_verdict_is_derived_from_the_rows() -> None:
-    from hoptrace.bracket import SystemRow, verdict_for
+    from hoppath.bracket import SystemRow, verdict_for
 
     floor = SystemRow("bm25-floor", 0.95, 0.92)
-    flat = [floor, SystemRow("hoptrace@1hop", 0.96, 0.93), SystemRow("hoptrace@2hop", 0.95, 0.92)]
+    flat = [floor, SystemRow("hoppath@1hop", 0.96, 0.93), SystemRow("hoppath@2hop", 0.95, 0.92)]
     code, text = verdict_for(flat, 0.05, 8, 5_000)
     assert code == "single_hop" and "plain BM25" in text
-    lifted = [floor, SystemRow("hoptrace@1hop", 0.99, 0.99), SystemRow("hoptrace@2hop", 0.98, 0.97)]
+    lifted = [floor, SystemRow("hoppath@1hop", 0.99, 0.99), SystemRow("hoppath@2hop", 0.98, 0.97)]
     code, text = verdict_for(lifted, 0.40, 8, 5_000)
-    assert code == "multi_hop" and "keep hops on (hoptrace@1hop)" in text
-    stuck = [floor, SystemRow("hoptrace@1hop", 0.95, 0.93), SystemRow("hoptrace@2hop", 0.95, 0.92)]
+    assert code == "multi_hop" and "keep hops on (hoppath@1hop)" in text
+    stuck = [floor, SystemRow("hoppath@1hop", 0.95, 0.93), SystemRow("hoppath@2hop", 0.95, 0.92)]
     code, text = verdict_for(stuck, 0.40, 8, 5_000)
     assert code == "hops_do_not_help" and "Use BM25" in text
     code, text = verdict_for(lifted, 0.40, 8, 25)

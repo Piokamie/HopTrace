@@ -4,7 +4,7 @@
 > measured on three corpus protocols. Every number is from a full
 > (non-`--limit`) run unless marked sampled; retrieval
 > configuration, corpus protocol, and the rerank model's training
-> provenance are embedded in each report (`hoptrace eval … --json
+> provenance are embedded in each report (`hoppath eval … --json
 > <file>` writes it; the text report prints the same notes).
 
 ## Protocol
@@ -43,7 +43,7 @@
   and a retrieved chunk is a hit iff it is a gold paragraph.
 - **Analyzer**: `english` (Lucene-style stopwords + Porter stemming).
   BM25 k1=0.9, b=0.4 (the published baseline configuration).
-- **Retrieval** (HopTrace rows): propagated path scoring + per-ring interleave
+- **Retrieval** (HopPath rows): propagated path scoring + per-ring interleave
   (ADR 0005–0008), hops as marked, beams 8/16/64, hub_df_ratio 0.001.
   Rerank rows rescore the top-50 of that pool (ADR 0012); the model and
   graph precision are named per table.
@@ -60,7 +60,7 @@
 |---|---|---|---|
 | BM25 flat (published) | 0.633 | 0.796 | [Pyserini BEIR matrix](https://castorini.github.io/pyserini/2cr/beir.html) |
 | BM25 multifield (published) | 0.603 | 0.740 | BEIR paper ([arXiv:2104.08663](https://arxiv.org/abs/2104.08663)) |
-| HopTrace BM25 floor (flat) | 0.6352 | 0.7988 | `hoptrace eval --dataset beir-hotpotqa --gate` |
+| HopPath BM25 floor (flat) | 0.6352 | 0.7988 | `hoppath eval --dataset beir-hotpotqa --gate` |
 
 Deltas +0.0022 / +0.003, tolerance ±0.02. Full test split, 7,405 queries,
 5,233,329 passages.
@@ -71,7 +71,7 @@ All rows use the 1,000-question samples, corpora and metrics published
 with [Gutiérrez et al., NeurIPS
 2024](https://arxiv.org/abs/2405.14831). Rows marked *(paper)* are quoted
 from its Table 2; rows marked *(measured here)* are from
-`hoptrace eval --dataset hipporag-*`.
+`hoppath eval --dataset hipporag-*`.
 
 **MuSiQue** (11,656 passages, 1,000 questions):
 
@@ -82,8 +82,8 @@ from its Table 2; rows marked *(measured here)* are from
 | ColBERTv2 (paper) | 37.9 | 49.2 |
 | Proposition (paper) | 37.6 | 49.3 |
 | HippoRAG, best variant (paper) | 41.0 | 52.1 |
-| HopTrace 2hop + zero-shot rerank (measured here) | 42.4 | 57.8 |
-| HopTrace 2hop + fine-tuned rerank (measured here) | 54.2 | 66.1 |
+| HopPath 2hop + zero-shot rerank (measured here) | 42.4 | 57.8 |
+| HopPath 2hop + fine-tuned rerank (measured here) | 54.2 | 66.1 |
 
 **2WikiMultihopQA** (6,119 passages, 1,000 questions) — the transfer
 holdout, absent from training entirely (ADR 0011):
@@ -94,18 +94,18 @@ holdout, absent from training entirely (ADR 0011):
 | BM25 floor (measured here) | 57.1 | 67.5 |
 | ColBERTv2 (paper) | 59.2 | 68.2 |
 | HippoRAG, best variant (paper) | 71.5 | 89.5 |
-| HopTrace 2hop + zero-shot rerank (measured here) | 58.1 | 76.5 |
-| HopTrace 2hop + fine-tuned rerank (measured here) | 73.8 | 85.9 |
+| HopPath 2hop + zero-shot rerank (measured here) | 58.1 | 76.5 |
+| HopPath 2hop + fine-tuned rerank (measured here) | 73.8 | 85.9 |
 
 Two differences affect how the rows compare. The two BM25 rows are not
 the same system: they agree to 0.1 points on MuSiQue (32.4 vs 32.3) but
 differ by 5.3 on 2Wiki (57.1 vs 51.8), because this implementation indexes
 `"title text"` (the Anserini flat condition), which favours
 entity-centric titles. HippoRAG also builds its knowledge graph with an
-LLM (OpenIE over the corpus); HopTrace uses entity expansion plus a CPU
+LLM (OpenIE over the corpus); HopPath uses entity expansion plus a CPU
 cross-encoder (91 MB fp32, 23 MB int8).
 
-Fine-tuned rows use the bundled reranker (`models/hoptrace-rerank-minilm-l6`,
+Fine-tuned rows use the bundled reranker (`models/hoppath-rerank-minilm-l6`,
 fp32 graph). Its training set contains no evaluation-gold passage at all
 (the leak audit below measures 0 of 2,648); the ablation model trained
 with them kept appears only in the exclusion-ablation table.
@@ -171,7 +171,7 @@ shipped model has none by construction.
 
 Reproduce the counts with
 `uv run --extra eval python training/audit_exposure.py` (writes
-`$HOPTRACE_DATA_DIR/eval/hipporag-musique-exposure.json` and a report
+`$HOPPATH_DATA_DIR/eval/hipporag-musique-exposure.json` and a report
 beside it). The ablation pair is one retrieval pass:
 `training/build_dataset.py --keep-eval-gold` then `--from` that
 directory (`training/README.md`).
@@ -275,24 +275,24 @@ defeat shortcuts, measures most-genuinely multi-hop; 62% of HotpotQA's
 | System | r@20 | ag@20 | ag@20 eff-multi | ag@20 eff-single | Latency med |
 |---|---|---|---|---|---|
 | floor | 0.555 | 0.210 | 0.055 | 0.502 | 0.4 ms |
-| HopTrace@1hop | 0.588 | 0.301 | — | — | 3.5 ms |
-| HopTrace@2hop | 0.572 | 0.279 | 0.167 | 0.492 | 6.5 ms |
+| HopPath@1hop | 0.588 | 0.301 | — | — | 3.5 ms |
+| HopPath@2hop | 0.572 | 0.279 | 0.167 | 0.492 | 6.5 ms |
 
 **2WikiMultihopQA** (pooled dev, 56,687 chunks, 12,576 q):
 
 | System | r@20 | ag@20 | ag@20 eff-multi | ag@20 eff-single | Latency med |
 |---|---|---|---|---|---|
 | floor | 0.708 | 0.415 | 0.071 | 0.422 | 0.9 ms |
-| HopTrace@1hop | 0.801 | 0.575 | — | — | 4.2 ms |
-| HopTrace@2hop | 0.774 | 0.529 | 0.342 | 0.478 | 8.6 ms |
+| HopPath@1hop | 0.801 | 0.575 | — | — | 4.2 ms |
+| HopPath@2hop | 0.774 | 0.529 | 0.342 | 0.478 | 8.6 ms |
 
 **HotpotQA** (BEIR full corpus, 5,233,329 chunks, 7,405 q):
 
 | System | r@20 | ag@20 | ag@20 eff-multi | ag@20 eff-single | Latency med |
 |---|---|---|---|---|---|
 | floor | 0.710 | 0.473 | 0.072 | 0.693 | 66.8 ms |
-| HopTrace@1hop | 0.701 | 0.479 | — | — | ~150 ms |
-| HopTrace@2hop | 0.690 | 0.457 | 0.118 | 0.651 | 224.9 ms |
+| HopPath@1hop | 0.701 | 0.479 | — | — | ~150 ms |
+| HopPath@2hop | 0.690 | 0.457 | 0.118 | 0.651 | 224.9 ms |
 
 Readings, in calibration order:
 
@@ -426,13 +426,13 @@ above.
 The headline tables (`--extra eval --extra rerank`):
 
 ```
-hoptrace eval --dataset hipporag-musique --hops 0 --diagnostics                              # floor
-hoptrace eval --dataset hipporag-musique --hops 2 --diagnostics                              # 2hop interleave (v1)
-hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision fp32 --diagnostics   # fine-tuned (bundled model)
-hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision int8                 # its int8 row
-hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision fp32 --no-path-context   # fine-tuned, route OFF
-hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-model ms-marco-minilm-l6-v2   # zero-shot, route ON
-hoptrace eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-model ms-marco-minilm-l6-v2 --no-path-context   # zero-shot, route OFF
+hoppath eval --dataset hipporag-musique --hops 0 --diagnostics                              # floor
+hoppath eval --dataset hipporag-musique --hops 2 --diagnostics                              # 2hop interleave (v1)
+hoppath eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision fp32 --diagnostics   # fine-tuned (bundled model)
+hoppath eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision int8                 # its int8 row
+hoppath eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-precision fp32 --no-path-context   # fine-tuned, route OFF
+hoppath eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-model ms-marco-minilm-l6-v2   # zero-shot, route ON
+hoppath eval --dataset hipporag-musique --hops 2 --selection rerank --rerank-model ms-marco-minilm-l6-v2 --no-path-context   # zero-shot, route OFF
 ```
 
 The same seven for `--dataset hipporag-2wiki`. The exclusion-ablation
@@ -442,12 +442,12 @@ baseline is a model built with `--keep-eval-gold` passed as
 The gate, the v1 development numbers, and the scaling arm:
 
 ```
-hoptrace eval --dataset beir-hotpotqa --gate
-hoptrace eval --dataset musique --hops 2 --diagnostics
-hoptrace eval --dataset 2wiki --hops 2 --diagnostics --pool-ablation 500
-hoptrace eval --dataset beir-hotpotqa --hops 2 --diagnostics --pool-ablation 300
-hoptrace eval --dataset musique --corpus-pool all --hops 2 --diagnostics
-hoptrace eval --dataset musique --hops 2 --diagnostics --beam-entities 16 --beam-chunks 32 --frontier-chunks 128
+hoppath eval --dataset beir-hotpotqa --gate
+hoppath eval --dataset musique --hops 2 --diagnostics
+hoppath eval --dataset 2wiki --hops 2 --diagnostics --pool-ablation 500
+hoppath eval --dataset beir-hotpotqa --hops 2 --diagnostics --pool-ablation 300
+hoppath eval --dataset musique --corpus-pool all --hops 2 --diagnostics
+hoppath eval --dataset musique --hops 2 --diagnostics --beam-entities 16 --beam-chunks 32 --frontier-chunks 128
 ```
 
 The reranker artifact is reproduced by `training/build_dataset.py` then
@@ -458,7 +458,7 @@ dirty-tree artifact.
 
 BEIR index: 5,233,329 passages → 13.3M entities, 50.4M mentions, 8.4 GB
 SQLite, 1.14 h single-threaded build on a laptop-class CPU. Datasets download
-to `$HOPTRACE_DATA_DIR/datasets/` with recorded checksums; never committed.
+to `$HOPPATH_DATA_DIR/datasets/` with recorded checksums; never committed.
 Rerank latency is measured at the shipped default of 4 ONNX threads,
 `rerank_top_n=50`, on CPU; the deterministic rows are single-threaded.
 Fine-tuned rows were measured 2026-08-21 with the bundled artifact;

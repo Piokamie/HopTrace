@@ -13,7 +13,7 @@ examples/QUESTIONS.md). All of this is pinned by
 ## 1. Ingest
 
 ```
-$ hoptrace ingest examples/office --corpus office
+$ hoppath ingest examples/office --corpus office
 corpus office: 25 documents, 25 chunks, 24 entities, 44 mentions (analyzer=english)
 ```
 
@@ -33,7 +33,7 @@ With hops disabled (the BM25 floor), the answer document does not appear
 there:
 
 ```
-$ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 0
+$ hoppath retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 0
 #1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
 # … #2, #3 are unrelated lexical matches; chunk#12 is absent
@@ -42,7 +42,7 @@ $ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office 
 With hop expansion, it appears at rank 2 — and says how it got there:
 
 ```
-$ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2
+$ hoppath retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2
 #1 chunk#8 (people/alicja-rud.md) [mention, hop 0] score 1.0000 (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
    text: Alicja Rud is a data engineer on the ingestion crew at Ostra Labs. …
@@ -58,7 +58,7 @@ The path line is citable verbatim and names the file at every step:
 ## 3. Why was that chunk retrieved? (`explain`)
 
 ```
-$ hoptrace explain 12 --corpus office --query "Where does the manager of Alicja Rud sit?"
+$ hoppath explain 12 --corpus office --query "Where does the manager of Alicja Rud sit?"
 chunk#12 (people/marek-sosna.md, title=Marek Sosna)
 entities: marek sosna, office b12, tuesday
 for query 'Where does the manager of Alicja Rud sit?': rank #2 (top-k)
@@ -77,12 +77,12 @@ question and was retrieved through the recorded entity path alone.
 ## 4. Optional: the learned reranker (`--rerank`)
 
 Everything above is deterministic. With the `rerank` extra installed, the
-bundled path-aware cross-encoder (`models/hoptrace-rerank-minilm-l6`, int8
+bundled path-aware cross-encoder (`models/hoppath-rerank-minilm-l6`, int8
 graph) rescores the top candidates — it reorders the pool, it
 never reaches outside it:
 
 ```
-$ hoptrace retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2 --rerank
+$ hoppath retrieve "Where does the manager of Alicja Rud sit?" --corpus office --hops 2 --rerank
 #1 chunk#8 (people/alicja-rud.md) [mention, hop 0] rerank +4.586 (path 1.0000) (bm25 7.32, terms: Alicja, Rud)
    path: query:"Alicja Rud" → chunk#8 (people/alicja-rud.md: "Alicja Rud is a data engineer on the ingestion crew at Ostr…")
 #2 chunk#12 (people/marek-sosna.md) [mention, hop 1] rerank +0.535 (path 0.5231) (bm25 0.00, terms: none)
@@ -106,22 +106,22 @@ the default and both are reported in [results.md](results.md).
 `--rerank-precision fp32` loads the fp32 graph (a release download),
 `--rerank-model ms-marco-minilm-l6-v2` the zero-shot base, and any
 directory built by `training/` works as `--rerank-model`
-(`HOPTRACE_RERANK_MODEL` does the same for the MCP server).
+(`HOPPATH_RERANK_MODEL` does the same for the MCP server).
 
 ## 5. Does this corpus even need hops? (`bracket`)
 
 ```
-$ hoptrace bracket --corpus office -n 20
+$ hoppath bracket --corpus office -n 20
 bracket over 15 generated questions (10 single-hop, 5 multi-hop), corpus 25 chunks, k=8, seed=0
   bm25-floor     recall@8: 0.8333   all-gold@8: 0.6667
-  hoptrace@1hop  recall@8: 1.0000   all-gold@8: 1.0000
-  hoptrace@2hop  recall@8: 1.0000   all-gold@8: 1.0000
+  hoppath@1hop  recall@8: 1.0000   all-gold@8: 1.0000
+  hoppath@2hop  recall@8: 1.0000   all-gold@8: 1.0000
   oracle (gold fits in k): 1.0000
   multihop_fraction (floor-insufficiency): 0.3333
   misses at 2hop: extraction=0, ranking=0, hop_bound=0, seed_alias=0
   note: corpus supported only 15 of 20 requested questions
-  VERDICT: 25 chunks is too few for a stable reading (the fraction swings with -n); indicative only: 33% of generated questions need more than the BM25 floor, and hoptrace@1hop lifts all-gold@8 from 0.67 to 1.00 (+0.33). Entity-bridged multi-hop is real on this corpus; keep hops on (hoptrace@1hop).
-  CAVEAT: self-benchmark: questions are generated from this corpus's own entity index, so extraction misses are invisible by construction and floor-vs-HopTrace comparisons favor HopTrace. Use this bracket to judge whether hop retrieval functions on YOUR corpus and how much of it is multi-hop — never as cross-system evidence.
+  VERDICT: 25 chunks is too few for a stable reading (the fraction swings with -n); indicative only: 33% of generated questions need more than the BM25 floor, and hoppath@1hop lifts all-gold@8 from 0.67 to 1.00 (+0.33). Entity-bridged multi-hop is real on this corpus; keep hops on (hoppath@1hop).
+  CAVEAT: self-benchmark: questions are generated from this corpus's own entity index, so extraction misses are invisible by construction and floor-vs-HopPath comparisons favor HopPath. Use this bracket to judge whether hop retrieval functions on YOUR corpus and how much of it is multi-hop — never as cross-system evidence.
 ```
 
 Here ~33% of generated questions are beyond the floor and hop retrieval
@@ -133,16 +133,16 @@ numbers are in [results.md](results.md).
 
 ## 6. The same four verbs over MCP
 
-`hoptrace serve` exposes `ingest`, `retrieve`, `explain`, and `bracket` as
+`hoppath serve` exposes `ingest`, `retrieve`, `explain`, and `bracket` as
 MCP tools over stdio. Claude Desktop / Claude Code configuration:
 
 ```json
 {
   "mcpServers": {
-    "hoptrace": {
+    "hoppath": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/hoptrace", "hoptrace", "serve"],
-      "env": { "HOPTRACE_DATA_DIR": "/path/to/hoptrace/.hoptrace" }
+      "args": ["run", "--directory", "/path/to/hoppath", "hoppath", "serve"],
+      "env": { "HOPPATH_DATA_DIR": "/path/to/hoppath/.hoppath" }
     }
   }
 }

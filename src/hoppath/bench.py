@@ -12,8 +12,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from hoptrace.store import Store
-from hoptrace.tokenize import LUCENE_STOPWORDS, analyze, tokenize
+from hoppath.store import Store
+from hoppath.tokenize import LUCENE_STOPWORDS, analyze, tokenize
 
 #: Bridges are useful when specific: df in [2, _BRIDGE_DF_MAX].
 _BRIDGE_DF_MAX = 4

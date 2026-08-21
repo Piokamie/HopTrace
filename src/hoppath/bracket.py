@@ -1,4 +1,4 @@
-"""Per-corpus bracket: BM25 floor, HopTrace at 1 and 2 hops, oracle, and
+"""Per-corpus bracket: BM25 floor, HopPath at 1 and 2 hops, oracle, and
 the multi-hop fraction, measured on the corpus's own self-benchmark.
 Diagnostic only (ADR 0004); externally validated numbers live in
 docs/results.md.
@@ -9,18 +9,18 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 
-from hoptrace.bench import BenchQuestion, generate_benchmark
-from hoptrace.bm25 import Bm25
-from hoptrace.config import RetrievalConfig
-from hoptrace.eval.diagnostics import MISS_KINDS, MissBreakdown, classify_misses
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
-from hoptrace.tokenize import analyze
+from hoppath.bench import BenchQuestion, generate_benchmark
+from hoppath.bm25 import Bm25
+from hoppath.config import RetrievalConfig
+from hoppath.eval.diagnostics import MISS_KINDS, MissBreakdown, classify_misses
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
+from hoppath.tokenize import analyze
 
 CAVEAT = (
     "self-benchmark: questions are generated from this corpus's own entity"
     " index, so extraction misses are invisible by construction and"
-    " floor-vs-HopTrace comparisons favor HopTrace. Use this bracket to judge"
+    " floor-vs-HopPath comparisons favor HopPath. Use this bracket to judge"
     " whether hop retrieval functions on YOUR corpus and how much of it is"
     " multi-hop — never as cross-system evidence."
 )
@@ -160,7 +160,7 @@ def run_bracket(
                 )
         rows.append(
             SystemRow(
-                system=f"hoptrace@{hops}hop",
+                system=f"hoppath@{hops}hop",
                 recall=sum(recalls) / len(recalls),
                 all_gold=sum(all_golds) / len(all_golds),
             )

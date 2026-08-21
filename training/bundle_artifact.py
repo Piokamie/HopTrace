@@ -5,9 +5,9 @@ Copies ``model_int8.onnx``, ``tokenizer.json``, ``manifest.json`` into
 every file's sha256. ``model.onnx`` (fp32) is hashed but not copied: it
 ships on the GitHub Release the registry URLs point at.
 
-    uv run python training/bundle_artifact.py $HOPTRACE_DATA_DIR/models/hoptrace-rerank-minilm-l6
+    uv run python training/bundle_artifact.py $HOPPATH_DATA_DIR/models/hoppath-rerank-minilm-l6
 
-Then paste the printed entry into ``src/hoptrace/rerank.py`` ``MODELS``,
+Then paste the printed entry into ``src/hoppath/rerank.py`` ``MODELS``,
 attach ``model.onnx`` (and, for wheel installs, the three bundled files)
 to the release named in ``_RELEASE``, and commit ``models/<name>/``.
 Refuses artifacts whose manifest records a dirty trainer tree.
@@ -21,7 +21,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from hoptrace.rerank import sha256_of
+from hoppath.rerank import sha256_of
 
 BUNDLED = ("model_int8.onnx", "tokenizer.json", "manifest.json")
 RELEASED = ("model.onnx",)

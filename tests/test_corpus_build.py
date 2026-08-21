@@ -2,14 +2,14 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.eval.adapters import load_hotpot_format, load_musique
-from hoptrace.eval.corpus_build import (
+from hoppath.eval.adapters import load_hotpot_format, load_musique
+from hoppath.eval.corpus_build import (
     build_beir_index,
     build_pooled_index,
     build_question_index,
     flat_text,
 )
-from hoptrace.store import Store
+from hoppath.store import Store
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -95,7 +95,7 @@ def test_deterministic_build(tmp_path: Path) -> None:
 
 
 def test_load_beir_answers() -> None:
-    from hoptrace.eval.corpus_build import load_beir_answers
+    from hoppath.eval.corpus_build import load_beir_answers
 
     answers = load_beir_answers(FIXTURES / "beir" / "queries.jsonl")
     assert answers == {"q1": "Jan Kowalski", "q2": "Room 204"}
@@ -126,7 +126,7 @@ def test_pooled_index_reuse_verifies_paragraph_identity(tmp_path: Path) -> None:
 
 
 def test_explicit_index_reuse_verifies_passage_identity(tmp_path: Path) -> None:
-    from hoptrace.eval.corpus_build import build_explicit_index
+    from hoppath.eval.corpus_build import build_explicit_index
 
     entries = [("A", "alpha text"), ("B", "beta text"), ("C", "gamma text")]
     target = tmp_path / "explicit.sqlite"

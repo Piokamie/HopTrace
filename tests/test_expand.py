@@ -2,11 +2,11 @@ from dataclasses import replace
 
 import pytest
 
-from hoptrace.config import ChunkConfig, RetrievalConfig
-from hoptrace.expand import Candidate, Expander, bridge_strength
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.provenance import HopEdge, HopPath
-from hoptrace.store import Store
+from hoppath.config import ChunkConfig, RetrievalConfig
+from hoppath.expand import Candidate, Expander, bridge_strength
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.provenance import HopEdge, HopPath
+from hoppath.store import Store
 
 # Anna -> Kowalski -> Room 204, plus "Meridian" in every chunk as a hub.
 DOCS = [

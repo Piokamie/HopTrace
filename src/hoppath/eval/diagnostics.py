@@ -17,8 +17,8 @@ import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from hoptrace.provenance import RetrievalResult
-from hoptrace.store import Store
+from hoppath.provenance import RetrievalResult
+from hoppath.store import Store
 
 _WS_RE = re.compile(r"\s+")
 _PUNCT_RE = re.compile(r"[^\w\s]")

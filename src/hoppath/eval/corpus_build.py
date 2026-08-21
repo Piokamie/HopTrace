@@ -20,13 +20,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from hoptrace.config import ChunkConfig, ExtractorConfig
-from hoptrace.eval.adapters import EvalQuestion, Paragraph, iter_beir_corpus
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.mentions import EXTRACTOR_VERSION, MentionExtractor
-from hoptrace.normalize import TrivialNormalizer
-from hoptrace.store import MAX_TF, Store, StoreWriter
-from hoptrace.tokenize import analyze, tokenize
+from hoppath.config import ChunkConfig, ExtractorConfig
+from hoppath.eval.adapters import EvalQuestion, Paragraph, iter_beir_corpus
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.mentions import EXTRACTOR_VERSION, MentionExtractor
+from hoppath.normalize import TrivialNormalizer
+from hoppath.store import MAX_TF, Store, StoreWriter
+from hoppath.tokenize import analyze, tokenize
 
 _POSTING = struct.Struct("<IH")
 _BATCH = 20_000
@@ -122,7 +122,7 @@ def build_beir_index(
             if progress_every and chunk_id % progress_every == 0:
                 elapsed = time.perf_counter() - started
                 print(
-                    f"[hoptrace] indexed {chunk_id:,} passages"
+                    f"[hoppath] indexed {chunk_id:,} passages"
                     f" ({chunk_id / max(elapsed, 1e-9):,.0f}/s)",
                     file=sys.stderr,
                     flush=True,

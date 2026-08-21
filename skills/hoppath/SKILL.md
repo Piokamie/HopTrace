@@ -1,11 +1,11 @@
 ---
-name: hoptrace
-description: Use HopTrace's MCP tools (ingest, bracket, retrieve, explain) to answer questions from a local document corpus with cited evidence paths. Use when a HopTrace server is connected and the user asks about their documents, wants multi-hop evidence, or asks whether their corpus needs hop retrieval at all.
+name: hoppath
+description: Use HopPath's MCP tools (ingest, bracket, retrieve, explain) to answer questions from a local document corpus with cited evidence paths. Use when a HopPath server is connected and the user asks about their documents, wants multi-hop evidence, or asks whether their corpus needs hop retrieval at all.
 ---
 
-# HopTrace over MCP
+# HopPath over MCP
 
-HopTrace is a deterministic, LLM-free multi-hop retriever. It returns
+HopPath is a deterministic, LLM-free multi-hop retriever. It returns
 evidence chunks **with the path it took to reach them** — you answer from
 the chunks and cite the paths. Four tools; same behaviour over stdio and
 streamable-http.
@@ -25,7 +25,7 @@ streamable-http.
    - `multihop_fraction` — share of generated questions the BM25 floor
      cannot fully answer. Near 0: this corpus is effectively single-hop;
      plain lexical search (`hops=0`) is the cheaper answer.
-   - `floor` vs `hoptrace_1hop` / `hoptrace_2hop` — recall and all-gold
+   - `floor` vs `hoppath_1hop` / `hoppath_2hop` — recall and all-gold
      at k. If the floor already matches, hops add nothing here.
    - `miss_breakdown` — `extraction` (bridge entity never extracted →
      re-ingest with `ner`), `seed_alias` (query wording didn't resolve →
@@ -88,12 +88,12 @@ streamable-http.
 ## Server setup (for the user, not for you to run)
 
 ```json
-{"mcpServers": {"hoptrace": {"command": "uv",
-  "args": ["run", "--directory", "/abs/path/to/hoptrace", "hoptrace", "serve"],
-  "env": {"HOPTRACE_DATA_DIR": "/abs/path/to/hoptrace/.hoptrace"}}}}
+{"mcpServers": {"hoppath": {"command": "uv",
+  "args": ["run", "--directory", "/abs/path/to/hoppath", "hoppath", "serve"],
+  "env": {"HOPPATH_DATA_DIR": "/abs/path/to/hoppath/.hoppath"}}}}
 ```
 
-`HOPTRACE_DATA_DIR` must be absolute — clients launch servers from
+`HOPPATH_DATA_DIR` must be absolute — clients launch servers from
 arbitrary directories and a relative default yields an empty corpus list.
-`hoptrace serve --http --port 8000` exposes the same tools at
+`hoppath serve --http --port 8000` exposes the same tools at
 `http://127.0.0.1:8000/mcp` (no auth: localhost or behind a proxy).

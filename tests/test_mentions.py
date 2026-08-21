@@ -1,7 +1,7 @@
 import pytest
 
-from hoptrace.config import ExtractorConfig
-from hoptrace.mentions import Mention, MentionExtractor
+from hoppath.config import ExtractorConfig
+from hoppath.mentions import Mention, MentionExtractor
 
 extractor = MentionExtractor()
 
@@ -44,11 +44,11 @@ def test_corpus_caps_rescue_sentence_initial() -> None:
 
 
 def test_code_identifiers() -> None:
-    text = "Call hop_expand or RetrievalConfig or hoptrace.store.open here."
+    text = "Call hop_expand or RetrievalConfig or hoppath.store.open here."
     found = entities(text)
     assert "hop_expand" in found
     assert "retrievalconfig" in found
-    assert "hoptrace store open" in found
+    assert "hoppath store open" in found
 
 
 def test_numbers_with_units() -> None:

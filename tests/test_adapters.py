@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.eval.adapters import (
+from hoppath.eval.adapters import (
     SchemaError,
     iter_beir_corpus,
     load_beir_qrels,

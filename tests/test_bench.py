@@ -1,10 +1,10 @@
 import pytest
 
-from hoptrace.bench import generate_benchmark
-from hoptrace.config import ChunkConfig
-from hoptrace.ingest import SourceDocument, ingest_documents
-from hoptrace.store import Store
-from hoptrace.tokenize import tokenize
+from hoppath.bench import generate_benchmark
+from hoppath.config import ChunkConfig
+from hoppath.ingest import SourceDocument, ingest_documents
+from hoppath.store import Store
+from hoppath.tokenize import tokenize
 
 # Bridge-rich fixture: several exclusive entity bridges (each shared by
 # exactly two chunks), enough entities per chunk for single-hop questions.

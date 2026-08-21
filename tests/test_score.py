@@ -1,6 +1,6 @@
-from hoptrace.expand import Candidate
-from hoptrace.provenance import HopEdge, HopPath
-from hoptrace.score import Feature, candidate_features, greedy_select, interleave
+from hoppath.expand import Candidate
+from hoppath.provenance import HopEdge, HopPath
+from hoppath.score import Feature, candidate_features, greedy_select, interleave
 
 
 def seed(chunk_id: int, score: float) -> Candidate:

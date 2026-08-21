@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from hoptrace.bracket import run_bracket
-from hoptrace.config import RetrievalConfig, corpus_path
-from hoptrace.ingest import ingest_path
-from hoptrace.retrieve import Retriever
-from hoptrace.store import Store
+from hoppath.bracket import run_bracket
+from hoppath.config import RetrievalConfig, corpus_path
+from hoppath.ingest import ingest_path
+from hoppath.retrieve import Retriever
+from hoppath.store import Store
 
 OFFICE = Path(__file__).parent.parent / "examples" / "office"
 
@@ -54,7 +54,7 @@ DESIGNED = [
 @pytest.fixture(scope="module")
 def store(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Store]:
     patcher = pytest.MonkeyPatch()
-    patcher.setenv("HOPTRACE_DATA_DIR", str(tmp_path_factory.mktemp("data")))
+    patcher.setenv("HOPPATH_DATA_DIR", str(tmp_path_factory.mktemp("data")))
     store, report = ingest_path(OFFICE, "office", analyzer="english")
     assert report.documents == 25  # QUESTIONS.md lives OUTSIDE the corpus dir
     assert corpus_path("office").is_file()

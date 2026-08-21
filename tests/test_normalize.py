@@ -1,4 +1,4 @@
-from hoptrace.normalize import TrivialNormalizer
+from hoppath.normalize import TrivialNormalizer
 
 norm = TrivialNormalizer()
 

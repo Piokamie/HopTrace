@@ -1,6 +1,6 @@
 """Dataset registry: pinned URLs, sizes, checksums, published baselines.
 
-Datasets are downloaded to ``$HOPTRACE_DATA_DIR/datasets/`` on first use and
+Datasets are downloaded to ``$HOPPATH_DATA_DIR/datasets/`` on first use and
 never committed. ``sha256=None`` means "record on first download"; a mismatch
 against a pinned or recorded value is a hard error.
 """
@@ -15,7 +15,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from hoptrace.config import data_dir
+from hoppath.config import data_dir
 
 
 @dataclass(frozen=True)
@@ -198,7 +198,7 @@ def ensure_dataset(name: str) -> Path:
     (root / f"{spec.filename}.sha256").write_text(f"{digest}  {spec.filename}\n")
 
     if spec.extract_dir is not None:
-        print(f"[hoptrace] extracting {spec.filename} ...", file=sys.stderr)
+        print(f"[hoppath] extracting {spec.filename} ...", file=sys.stderr)
         staging = root / f".extract-{spec.extract_dir}"
         if staging.is_dir():
             shutil.rmtree(staging)
@@ -227,7 +227,7 @@ def _recorded_sha(root: Path, filename: str) -> str | None:
 
 def _download(spec: DatasetSpec, target: Path) -> None:
     print(
-        f"[hoptrace] downloading {spec.name} (~{spec.size / 1e6:.0f} MB) from {spec.url}",
+        f"[hoppath] downloading {spec.name} (~{spec.size / 1e6:.0f} MB) from {spec.url}",
         file=sys.stderr,
     )
     tmp = target.with_suffix(target.suffix + ".part")

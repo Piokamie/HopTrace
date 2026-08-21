@@ -5,8 +5,8 @@ it scored (and scored as label=1). Matches on the builder's
 
     uv run --extra eval python training/audit_exposure.py [--train-dir DIR] [--eval NAME]
 
-Writes ``$HOPTRACE_DATA_DIR/eval/<eval>-exposure.json`` (the per-question
-buckets ``hoptrace eval --strata-file`` consumes) and a text report beside it.
+Writes ``$HOPPATH_DATA_DIR/eval/<eval>-exposure.json`` (the per-question
+buckets ``hoppath eval --strata-file`` consumes) and a text report beside it.
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ import json
 import sys
 from pathlib import Path
 
-from hoptrace.config import data_dir
-from hoptrace.eval.adapters import load_corpus_entries, load_hotpot_format, load_musique_json
-from hoptrace.eval.corpus_build import flat_text
-from hoptrace.eval.datasets import ensure_dataset
+from hoppath.config import data_dir
+from hoppath.eval.adapters import load_corpus_entries, load_hotpot_format, load_musique_json
+from hoppath.eval.corpus_build import flat_text
+from hoppath.eval.datasets import ensure_dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_dataset import key_of, rows_of

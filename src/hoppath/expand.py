@@ -11,9 +11,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from hoptrace.config import RetrievalConfig
-from hoptrace.provenance import HopEdge, HopPath
-from hoptrace.store import Store
+from hoppath.config import RetrievalConfig
+from hoppath.provenance import HopEdge, HopPath
+from hoppath.store import Store
 
 
 @dataclass(frozen=True)

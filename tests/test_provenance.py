@@ -1,4 +1,4 @@
-from hoptrace.provenance import HopEdge, HopPath, render_path
+from hoppath.provenance import HopEdge, HopPath, render_path
 
 
 def path_two_hop() -> HopPath:

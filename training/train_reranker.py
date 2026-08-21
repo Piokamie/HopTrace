@@ -1,4 +1,4 @@
-"""Fine-tune the path-aware cross-encoder and export it for HopTrace.
+"""Fine-tune the path-aware cross-encoder and export it for HopPath.
 
 Reads the jsonl rows ``build_dataset.py`` produced, fine-tunes
 ``cross-encoder/ms-marco-MiniLM-L6-v2`` with pointwise BCE, exports ONNX
@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 BASE_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
-MAX_LENGTH = 256  # == hoptrace.rerank.MAX_LENGTH; the exported graph is length-agnostic
+MAX_LENGTH = 256  # == hoppath.rerank.MAX_LENGTH; the exported graph is length-agnostic
 HOLDOUT = ("2wiki",)
 
 
@@ -94,10 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-    from hoptrace.config import data_dir
+    from hoppath.config import data_dir
 
     train_dir = args.data_dir or (data_dir() / "training")
-    out_dir = args.out or (data_dir() / "models" / "hoptrace-rerank-minilm-l6")
+    out_dir = args.out or (data_dir() / "models" / "hoppath-rerank-minilm-l6")
     out_dir.mkdir(parents=True, exist_ok=True)
     dataset_manifest = json.loads((train_dir / "dataset_manifest.json").read_text())
     for source in dataset_manifest["sources"]:

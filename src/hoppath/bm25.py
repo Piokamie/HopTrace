@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from hoptrace.store import Store
+from hoppath.store import Store
 
 _NP_POSTING_DTYPE_FIELDS = [("id", "<u4"), ("tf", "<u2")]
 
@@ -163,6 +163,6 @@ def _require_numpy() -> Any:
         import numpy
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise RuntimeError(
-            "corpus-scale BM25 requires numpy: install with `pip install 'hoptrace[eval]'`"
+            "corpus-scale BM25 requires numpy: install with `pip install 'hoppath[eval]'`"
         ) from exc
     return numpy

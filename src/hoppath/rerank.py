@@ -19,12 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from hoptrace.config import models_dir
-from hoptrace.score import Selected
+from hoppath.config import models_dir
+from hoppath.score import Selected
 
 if TYPE_CHECKING:
-    from hoptrace.config import RetrievalConfig
-    from hoptrace.expand import Candidate
+    from hoppath.config import RetrievalConfig
+    from hoppath.expand import Candidate
 
 #: Parent-chunk snippet length in the route context (chars).
 PARENT_SNIPPET_CHARS = 160
@@ -109,14 +109,14 @@ class ModelSpec:
 
 
 _HUB = "https://huggingface.co/cross-encoder/ms-marco-MiniLM-L6-v2/resolve/main"
-_RELEASE = "https://github.com/Piokamie/HopTrace/releases/download/v0.1.0"
+_RELEASE = "https://github.com/Piokamie/HopPath/releases/download/v0.1.0"
 
 #: Unpinned entries are refused, never downloaded.
 _UNPINNED = "unpinned"
 
 MODELS: dict[str, ModelSpec] = {
-    "hoptrace-rerank-minilm-l6": ModelSpec(
-        name="hoptrace-rerank-minilm-l6",
+    "hoppath-rerank-minilm-l6": ModelSpec(
+        name="hoppath-rerank-minilm-l6",
         default_precision="int8",
         files=(
             ModelFile(
@@ -137,7 +137,7 @@ MODELS: dict[str, ModelSpec] = {
             ModelFile(
                 "manifest.json",
                 f"{_RELEASE}/manifest.json",
-                "747f573da2e4f227f2ff182456d213b95489546ea42580a158176ca4031353c5",
+                "93201ad18856be3b864246dd16d2dd9af57d30c23ad12636e065056b20616e55",
             ),
         ),
     ),
@@ -159,7 +159,7 @@ MODELS: dict[str, ModelSpec] = {
     ),
 }
 
-DEFAULT_RERANK_MODEL = "hoptrace-rerank-minilm-l6"
+DEFAULT_RERANK_MODEL = "hoppath-rerank-minilm-l6"
 ZERO_SHOT_MODEL = "ms-marco-minilm-l6-v2"
 
 #: Registry files committed under ``<repo>/models/``; absent in a wheel, where
@@ -174,9 +174,9 @@ def graph_file(precision: str) -> str:
 
 
 def effective_model_spec(spec: str | None) -> str:
-    """Config value after the ``$HOPTRACE_RERANK_MODEL`` and default fallbacks;
+    """Config value after the ``$HOPPATH_RERANK_MODEL`` and default fallbacks;
     the training wall must check this, not the raw field."""
-    return spec or os.environ.get("HOPTRACE_RERANK_MODEL") or DEFAULT_RERANK_MODEL
+    return spec or os.environ.get("HOPPATH_RERANK_MODEL") or DEFAULT_RERANK_MODEL
 
 
 @dataclass(frozen=True)
@@ -211,7 +211,7 @@ def resolve_model(spec: str | None, precision: str | None = None) -> ResolvedMod
     A caller-supplied directory is used as is. A registry name resolves to
     the bundled repository copy when complete, else to ``models_dir()/<name>``
     with missing files copied from the bundle or downloaded, always against
-    the pinned sha256. ``spec=None`` falls back to ``$HOPTRACE_RERANK_MODEL``
+    the pinned sha256. ``spec=None`` falls back to ``$HOPPATH_RERANK_MODEL``
     then the bundled model; ``precision=None`` takes the artifact's default."""
     spec = effective_model_spec(spec)
     if precision is not None:
@@ -360,7 +360,7 @@ def _require_runtime() -> tuple[Any, Any]:
         from tokenizers import Tokenizer
     except ImportError as exc:
         raise RuntimeError(
-            "reranking requires the rerank extra: install with `pip install 'hoptrace[rerank]'`"
+            "reranking requires the rerank extra: install with `pip install 'hoppath[rerank]'`"
         ) from exc
     return onnxruntime, Tokenizer
 
@@ -376,7 +376,7 @@ def sha256_of(path: Path) -> str:
 def _verify(path: Path, expected: str, label: str) -> None:
     if expected == _UNPINNED:
         raise RuntimeError(
-            f"{label} has no pinned checksum in this build of hoptrace; the file at"
+            f"{label} has no pinned checksum in this build of hoppath; the file at"
             f" {path} cannot be trusted. Pass --rerank-model <directory> to use it explicitly"
         )
     actual = sha256_of(path)
@@ -391,11 +391,11 @@ def _verify(path: Path, expected: str, label: str) -> None:
 def _download(target: Path, spec: ModelFile, label: str) -> None:
     if spec.sha256 == _UNPINNED:
         raise RuntimeError(
-            f"{label} has no pinned checksum in this build of hoptrace and will not be"
+            f"{label} has no pinned checksum in this build of hoppath and will not be"
             f" downloaded from {spec.url}. Fetch it manually and pass --rerank-model"
             f" <directory>"
         )
-    print(f"[hoptrace] downloading {label} from {spec.url}", file=sys.stderr)
+    print(f"[hoppath] downloading {label} from {spec.url}", file=sys.stderr)
     tmp = target.with_suffix(target.suffix + ".part")
     try:
         with (
